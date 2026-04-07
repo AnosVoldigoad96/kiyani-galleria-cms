@@ -1,0 +1,335 @@
+"use client";
+
+import { useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+
+import { CmsModal } from "@/components/cms/cms-modal";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/cms/ui/input";
+import { Select } from "@/components/cms/ui/select";
+import { Textarea } from "@/components/cms/ui/textarea";
+import type { CmsOrder, CmsProduct } from "@/lib/cms-data";
+import {
+  createOrder,
+  updateOrder,
+  type OrderFulfillmentStatus,
+  type OrderItemPayload,
+  type OrderPaymentStatus,
+  type OrderPayload,
+} from "@/components/cms/orders/orders-api";
+import { cn } from "@/lib/utils";
+
+type OrderDraftItem = {
+  key: string;
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  unitPricePkr: number;
+};
+
+type OrderDraft = {
+  orderId?: string;
+  orderNo: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  city: string;
+  address: string;
+  paymentStatus: OrderPaymentStatus;
+  fulfillmentStatus: OrderFulfillmentStatus;
+  discountPkr: number;
+  shippingPkr: number;
+  notes: string;
+  syncAccounting: boolean;
+  items: OrderDraftItem[];
+};
+
+function money(v: number) { return `PKR ${Math.max(0, v).toLocaleString()}`; }
+
+function generateOrderNo() {
+  const n = new Date();
+  return `ORD-${n.getFullYear()}${String(n.getMonth() + 1).padStart(2, "0")}${String(n.getDate()).padStart(2, "0")}-${String(n.getHours()).padStart(2, "0")}${String(n.getMinutes()).padStart(2, "0")}${String(n.getSeconds()).padStart(2, "0")}`;
+}
+
+function createEmptyItem(products: CmsProduct[]): OrderDraftItem {
+  const p = products[0];
+  return p
+    ? { key: crypto.randomUUID(), productId: p.productId, productName: p.name, sku: p.id, quantity: 1, unitPricePkr: p.priceValue }
+    : { key: crypto.randomUUID(), productId: "", productName: "", sku: "", quantity: 1, unitPricePkr: 0 };
+}
+
+export function buildOrderDraft(order: CmsOrder | null, products: CmsProduct[]): OrderDraft {
+  if (!order) {
+    return {
+      orderNo: generateOrderNo(), customerName: "", customerEmail: "", customerPhone: "",
+      city: "", address: "", paymentStatus: "pending", fulfillmentStatus: "processing",
+      discountPkr: 0, shippingPkr: 0, notes: "", syncAccounting: true,
+      items: [createEmptyItem(products)],
+    };
+  }
+  return {
+    orderId: order.orderId, orderNo: order.orderNo,
+    customerName: order.customer.name,
+    customerEmail: order.customer.email === "No email" ? "" : order.customer.email,
+    customerPhone: order.customer.phone, city: order.customer.city === "Unknown" ? "" : order.customer.city,
+    address: order.customer.address, paymentStatus: order.paymentStatus,
+    fulfillmentStatus: order.fulfillmentStatus, discountPkr: order.discountPkr,
+    shippingPkr: order.shippingPkr, notes: order.notes, syncAccounting: true,
+    items: order.items.length
+      ? order.items.map((it) => ({ key: it.id || crypto.randomUUID(), productId: it.productId ?? "", productName: it.productName, sku: it.sku === "N/A" ? "" : it.sku, quantity: it.quantity, unitPricePkr: it.unitPricePkr }))
+      : [createEmptyItem(products)],
+  };
+}
+
+type OrderEditorProps = {
+  open: boolean;
+  editingOrder: CmsOrder | null;
+  products: CmsProduct[];
+  onClose: () => void;
+  onRefresh?: () => void;
+};
+
+const STEPS = ["Customer", "Items", "Review"] as const;
+
+export function OrderEditor({ open, editingOrder, products, onClose, onRefresh }: OrderEditorProps) {
+  const [step, setStep] = useState(0);
+  const [draft, setDraft] = useState<OrderDraft>(() => buildOrderDraft(editingOrder, products));
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const resetAndOpen = (order: CmsOrder | null) => {
+    setDraft(buildOrderDraft(order, products));
+    setStep(0);
+    setError(null);
+  };
+
+  // Reset when open changes
+  if (open && step === 0 && draft.orderNo !== buildOrderDraft(editingOrder, products).orderNo && !editingOrder) {
+    resetAndOpen(editingOrder);
+  }
+
+  const subtotal = draft.items.reduce((s, it) => s + it.quantity * it.unitPricePkr, 0);
+  const total = Math.max(0, subtotal - draft.discountPkr + draft.shippingPkr);
+
+  const set = <K extends keyof OrderDraft>(key: K, value: OrderDraft[K]) =>
+    setDraft((c) => ({ ...c, [key]: value }));
+
+  const handleProductPick = (idx: number, productId: string) => {
+    const p = products.find((r) => r.productId === productId);
+    setDraft((c) => ({
+      ...c,
+      items: c.items.map((it, i) =>
+        i !== idx ? it : { ...it, productId, productName: p?.name ?? it.productName, sku: p?.id ?? it.sku, unitPricePkr: p?.priceValue ?? it.unitPricePkr },
+      ),
+    }));
+  };
+
+  const setItemField = (idx: number, field: keyof OrderDraftItem, value: string | number) =>
+    setDraft((c) => ({ ...c, items: c.items.map((it, i) => (i !== idx ? it : { ...it, [field]: value })) }));
+
+  const handleSave = async () => {
+    const items: OrderItemPayload[] = draft.items
+      .map((it) => ({ product_id: it.productId || null, product_name: it.productName.trim(), sku: it.sku.trim() || null, quantity: Math.max(1, it.quantity), unit_price_pkr: Math.max(0, it.unitPricePkr), total_price_pkr: Math.max(1, it.quantity) * Math.max(0, it.unitPricePkr) }))
+      .filter((it) => it.product_name.length > 0);
+
+    if (!draft.orderNo.trim()) { setError("Order number is required."); return; }
+    if (!draft.customerName.trim()) { setError("Customer name is required."); setStep(0); return; }
+    if (!items.length) { setError("At least one valid item is required."); setStep(1); return; }
+
+    const payload: OrderPayload = {
+      order_no: draft.orderNo.trim(), customer_name: draft.customerName.trim(),
+      customer_email: draft.customerEmail.trim() || null, customer_phone: draft.customerPhone.trim() || null,
+      city: draft.city.trim() || null, address: draft.address.trim() || null,
+      payment_status: draft.paymentStatus, fulfillment_status: draft.fulfillmentStatus,
+      subtotal_pkr: Number(subtotal.toFixed(2)), discount_pkr: Number(draft.discountPkr.toFixed(2)),
+      shipping_pkr: Number(draft.shippingPkr.toFixed(2)), total_pkr: Number(total.toFixed(2)),
+      notes: draft.notes.trim() || null, user_id: null,
+    };
+
+    setIsSaving(true); setError(null);
+    try {
+      if (editingOrder?.orderId) {
+        await updateOrder(editingOrder.orderId, payload, items, draft.syncAccounting);
+        toast.success("Order updated.");
+      } else {
+        await createOrder(payload, items, draft.syncAccounting);
+        toast.success("Order created.");
+      }
+      onClose();
+      onRefresh?.();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to save order.";
+      setError(msg); toast.error(msg);
+    } finally { setIsSaving(false); }
+  };
+
+  return (
+    <CmsModal
+      open={open}
+      title={editingOrder ? "Edit Order" : "New Order"}
+      description={`Step ${step + 1} of 3: ${STEPS[step]}`}
+      onClose={() => { onClose(); setError(null); }}
+      footer={
+        <>
+          {step > 0 && (
+            <Button type="button" variant="outline" onClick={() => setStep((s) => s - 1)} disabled={isSaving}>
+              Back
+            </Button>
+          )}
+          <div className="flex-1" />
+          <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>Cancel</Button>
+          {step < 2 ? (
+            <Button type="button" onClick={() => setStep((s) => s + 1)}>Continue</Button>
+          ) : (
+            <Button type="button" onClick={handleSave} disabled={isSaving}>
+              {isSaving ? "Saving..." : editingOrder ? "Update Order" : "Create Order"}
+            </Button>
+          )}
+        </>
+      }
+    >
+      {/* Step indicator */}
+      <div className="flex items-center gap-2 mb-4">
+        {STEPS.map((label, i) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => setStep(i)}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              i === step ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <span className={cn("flex size-5 items-center justify-center rounded-full text-xs", i === step ? "bg-primary-foreground text-primary" : "bg-muted")}>{i + 1}</span>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Step 1: Customer */}
+      {step === 0 && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input label="Order No" value={draft.orderNo} onChange={(e) => set("orderNo", e.target.value)} />
+          <Input label="Customer Name" value={draft.customerName} onChange={(e) => set("customerName", e.target.value)} />
+          <Input label="Email" type="email" value={draft.customerEmail} onChange={(e) => set("customerEmail", e.target.value)} />
+          <Input label="Phone" value={draft.customerPhone} onChange={(e) => set("customerPhone", e.target.value)} />
+          <Input label="City" value={draft.city} onChange={(e) => set("city", e.target.value)} />
+          <Input label="Address" value={draft.address} onChange={(e) => set("address", e.target.value)} />
+        </div>
+      )}
+
+      {/* Step 2: Items */}
+      {step === 1 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-foreground">Line Items</p>
+            <Button type="button" variant="outline" size="sm" onClick={() => setDraft((c) => ({ ...c, items: [...c.items, createEmptyItem(products)] }))}>
+              <Plus className="mr-1 size-3.5" /> Add
+            </Button>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-border">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Product</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">SKU</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground w-20">Qty</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground w-28">Price</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground w-28">Total</th>
+                  <th className="px-3 py-2 w-10" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {draft.items.map((item, idx) => (
+                  <tr key={item.key}>
+                    <td className="px-3 py-2">
+                      <select
+                        value={item.productId}
+                        onChange={(e) => handleProductPick(idx, e.target.value)}
+                        className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+                      >
+                        <option value="">Manual item</option>
+                        {products.map((p) => (
+                          <option key={p.productId} value={p.productId}>{p.name}</option>
+                        ))}
+                      </select>
+                      <input
+                        value={item.productName}
+                        onChange={(e) => setItemField(idx, "productName", e.target.value)}
+                        className="mt-1 h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
+                        placeholder="Description"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input value={item.sku} onChange={(e) => setItemField(idx, "sku", e.target.value)} className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20" placeholder="SKU" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input type="number" min={1} value={item.quantity} onChange={(e) => setItemField(idx, "quantity", Number(e.target.value || 1))} className="h-8 w-full rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums outline-none focus:border-ring focus:ring-2 focus:ring-ring/20" />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input type="number" min={0} step="0.01" value={item.unitPricePkr} onChange={(e) => setItemField(idx, "unitPricePkr", Number(e.target.value || 0))} className="h-8 w-full rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums outline-none focus:border-ring focus:ring-2 focus:ring-ring/20" />
+                    </td>
+                    <td className="px-3 py-2 text-right text-sm font-medium tabular-nums">{money(item.quantity * item.unitPricePkr)}</td>
+                    <td className="px-3 py-2">
+                      <button type="button" onClick={() => setDraft((c) => ({ ...c, items: c.items.length > 1 ? c.items.filter((_, i) => i !== idx) : c.items }))} className="text-muted-foreground hover:text-destructive transition-colors">
+                        <Trash2 className="size-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3: Review */}
+      {step === 2 && (
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Select label="Payment Status" value={draft.paymentStatus} onChange={(e) => set("paymentStatus", e.target.value as OrderPaymentStatus)}>
+              <option value="pending">Pending</option>
+              <option value="paid">Paid</option>
+              <option value="failed">Failed</option>
+              <option value="refunded">Refunded</option>
+            </Select>
+            <Select label="Fulfillment Status" value={draft.fulfillmentStatus} onChange={(e) => set("fulfillmentStatus", e.target.value as OrderFulfillmentStatus)}>
+              <option value="processing">Processing</option>
+              <option value="packed">Packed</option>
+              <option value="dispatched">Dispatched</option>
+              <option value="delivered">Delivered</option>
+              <option value="cancelled">Cancelled</option>
+            </Select>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Input label="Discount (PKR)" type="number" min={0} step="0.01" value={draft.discountPkr} onChange={(e) => set("discountPkr", Number(e.target.value || 0))} />
+            <Input label="Shipping (PKR)" type="number" min={0} step="0.01" value={draft.shippingPkr} onChange={(e) => set("shippingPkr", Number(e.target.value || 0))} />
+            <div className="rounded-lg border border-border bg-muted/50 px-4 py-3">
+              <p className="text-xs font-medium text-muted-foreground">Totals</p>
+              <p className="mt-1 text-sm">Subtotal: {money(subtotal)}</p>
+              <p className="text-sm font-semibold">Total: {money(total)}</p>
+            </div>
+          </div>
+
+          <Textarea label="Notes" value={draft.notes} onChange={(e) => set("notes", e.target.value)} />
+
+          <label className="flex items-center gap-2 text-sm text-foreground">
+            <input
+              type="checkbox"
+              checked={draft.syncAccounting}
+              onChange={(e) => set("syncAccounting", e.target.checked)}
+              className="size-4 rounded border-border"
+            />
+            Sync with accounting (invoice + journal)
+          </label>
+        </div>
+      )}
+
+      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+    </CmsModal>
+  );
+}

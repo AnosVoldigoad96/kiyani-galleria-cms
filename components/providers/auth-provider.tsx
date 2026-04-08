@@ -39,6 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [appRole, setAppRole] = useState<AppRole | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRoleLoading, setIsRoleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -85,6 +86,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const sessionUserId = session.user.id;
     let active = true;
 
+    setIsRoleLoading(true);
+
     void client.refreshSession(60)
       .catch(() => null)
       .then((nextSession) => nextSession?.accessToken ?? client.getUserSession()?.accessToken ?? null)
@@ -130,6 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         setAppRole(response.body.role ?? null);
         setRoleError(null);
+        setIsRoleLoading(false);
       })
       .catch((caughtError) => {
         if (!active) {
@@ -140,6 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setRoleError(
           caughtError instanceof Error ? caughtError.message : "Failed to load profile role.",
         );
+        setIsRoleLoading(false);
       });
 
     return () => {
@@ -208,7 +213,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         roleError,
         hasCmsAccess: appRole === "admin" || appRole === "manager",
         isAuthenticated: Boolean(session?.accessToken),
-        isLoading,
+        isLoading: isLoading || isRoleLoading,
         error,
         configError: nhostConfigError,
         login,

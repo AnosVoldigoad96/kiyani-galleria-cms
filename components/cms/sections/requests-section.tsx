@@ -302,7 +302,6 @@ export function RequestsSection({ requests, products, onRefresh }: RequestsSecti
 
     const payload: RequestPayload = {
       request_no: draft.requestNo.trim(),
-      user_id: null,
       customer_name: draft.customerName.trim(),
       customer_email: draft.customerEmail.trim() || null,
       customer_phone: draft.customerPhone.trim() || null,

@@ -7,7 +7,6 @@ export type RequestStatus = "new" | "quoted" | "in_progress" | "completed" | "ca
 
 export type RequestPayload = {
   request_no: string;
-  user_id?: string | null;
   customer_name: string;
   customer_email: string | null;
   customer_phone: string | null;

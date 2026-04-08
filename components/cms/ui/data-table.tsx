@@ -88,7 +88,7 @@ export function DataTable<T>({
                 <th
                   key={col.key}
                   className={cn(
-                    "px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap",
+                    "px-2 sm:px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap",
                     col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
                     col.sortable && "cursor-pointer select-none hover:text-foreground",
                     col.hideBelow && hideClass[col.hideBelow],
@@ -126,7 +126,7 @@ export function DataTable<T>({
                   <td
                     key={col.key}
                     className={cn(
-                      "px-4 py-3",
+                      "px-2 sm:px-4 py-3",
                       col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left",
                       col.hideBelow && hideClass[col.hideBelow],
                     )}

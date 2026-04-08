@@ -10,6 +10,16 @@ import type {
   SubcategoryStatus,
 } from "./types";
 
+export function generateSku(existingProducts: Array<{ id: string }>) {
+  const nextNum = existingProducts.length + 1;
+  return `KG-${String(nextNum).padStart(3, "0")}`;
+}
+
+export function nextSortOrder(existingItems: Array<{ sortOrder?: number }>) {
+  const max = existingItems.reduce((m, item) => Math.max(m, item.sortOrder ?? 0), 0);
+  return String(max + 1);
+}
+
 export function slugify(value: string) {
   return value
     .trim()
@@ -72,6 +82,11 @@ export function categoryToFormState(category?: CmsCategory | null): CategoryForm
     description: category?.description ?? "",
     sortOrder: String(category?.sortOrder ?? 0),
     isVisible: category?.isVisible ?? true,
+    metaTitle: category?.metaTitle ?? "",
+    metaDescription: category?.metaDescription ?? "",
+    keywords: category?.keywords ?? "",
+    ogTitle: category?.ogTitle ?? "",
+    ogDescription: category?.ogDescription ?? "",
   };
 }
 
@@ -86,6 +101,11 @@ export function subcategoryToFormState(
     sortOrder: String(subcategory?.sortOrder ?? 0),
     status: toSubcategoryStatus(subcategory?.status),
     categoryId: subcategory?.categoryId ?? fallbackCategoryId ?? "",
+    metaTitle: subcategory?.metaTitle ?? "",
+    metaDescription: subcategory?.metaDescription ?? "",
+    keywords: subcategory?.keywords ?? "",
+    ogTitle: subcategory?.ogTitle ?? "",
+    ogDescription: subcategory?.ogDescription ?? "",
   };
 }
 
@@ -116,5 +136,10 @@ export function productToFormState(
     imageUrl: product?.imageUrl ?? "",
     imageAlt: product?.imageAlt ?? product?.imageLabel ?? "",
     featuresText: featuresToText(product?.features),
+    metaTitle: product?.metaTitle ?? "",
+    metaDescription: product?.metaDescription ?? "",
+    keywords: product?.keywords ?? "",
+    ogTitle: product?.ogTitle ?? "",
+    ogDescription: product?.ogDescription ?? "",
   };
 }

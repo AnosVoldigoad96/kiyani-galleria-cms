@@ -10,6 +10,8 @@ import {
   createCategory,
   createProduct,
   createSubcategory,
+  deleteProductImage,
+  extractFileId,
   deleteCategory,
   deleteProduct,
   deleteSubcategory,
@@ -28,7 +30,18 @@ import { ProductFormModal } from "./product-form-modal";
 import { ProductList } from "./product-list";
 import { SubcategoryFormModal } from "./subcategory-form-modal";
 import type { CategoryFormState, ProductFormState, SubcategoryFormState } from "./types";
-import { parseFeatures, slugify } from "./utils";
+import type { SeoFormFields } from "./types";
+import { generateSku, nextSortOrder, parseFeatures, slugify } from "./utils";
+
+function seoPayloadFromForm(state: SeoFormFields) {
+  return {
+    meta_title: state.metaTitle?.trim() || null,
+    meta_description: state.metaDescription?.trim() || null,
+    keywords: state.keywords?.trim() || null,
+    og_title: state.ogTitle?.trim() || null,
+    og_description: state.ogDescription?.trim() || null,
+  };
+}
 
 type ProductsSectionProps = {
   categories: CmsCategory[];
@@ -105,8 +118,9 @@ export function ProductsSection({
       name: state.name.trim(),
       slug: (state.slug || slugify(state.name)).trim(),
       description: state.description ? state.description.trim() : null,
-      sort_order: Number(state.sortOrder || 0),
+      sort_order: Number(state.sortOrder || 0) || (categoryEditor ? 0 : Number(nextSortOrder(categories))),
       is_visible: state.isVisible,
+      ...seoPayloadFromForm(state),
     };
 
     setIsSaving(true);
@@ -146,9 +160,10 @@ export function ProductsSection({
       name: state.name.trim(),
       slug: (state.slug || slugify(state.name)).trim(),
       description: state.description ? state.description.trim() : null,
-      sort_order: Number(state.sortOrder || 0),
+      sort_order: Number(state.sortOrder || 0) || (subcategoryEditor ? 0 : Number(nextSortOrder(subcategories))),
       status: state.status,
       category_id: state.categoryId,
+      ...seoPayloadFromForm(state),
     };
 
     setIsSaving(true);
@@ -179,10 +194,6 @@ export function ProductsSection({
       setError("Product name is required.");
       return;
     }
-    if (!state.sku.trim()) {
-      setError("SKU is required.");
-      return;
-    }
     if (!state.categoryId) {
       setError("Category is required.");
       return;
@@ -198,12 +209,19 @@ export function ProductsSection({
       let imageUrl = state.imageUrl ? state.imageUrl.trim() : null;
 
       if (imageFile) {
+        // Delete old image if replacing
+        if (productEditor?.imageUrl) {
+          const oldFileId = extractFileId(productEditor.imageUrl);
+          if (oldFileId) {
+            await deleteProductImage(oldFileId).catch(() => {});
+          }
+        }
         const upload = await uploadProductImage(imageFile);
         imageUrl = upload.url;
       }
 
       const payload: ProductPayload = {
-        sku: state.sku.trim(),
+        sku: state.sku.trim() || generateSku(products),
         name: state.name.trim(),
         slug: (state.slug || slugify(state.name)).trim(),
         description: state.description.trim(),
@@ -226,6 +244,7 @@ export function ProductsSection({
         status: state.status,
         created_by: user?.id ?? null,
         updated_by: user?.id ?? null,
+        ...seoPayloadFromForm(state),
       };
 
       const features = parseFeatures(state.featuresText);
@@ -355,6 +374,7 @@ export function ProductsSection({
         categories={categories}
         subcategories={subcategories}
         fallbackCategoryId={defaultCategoryId}
+        defaultSku={generateSku(products)}
         onClose={() => {
           setProductModalOpen(false);
           resetError();

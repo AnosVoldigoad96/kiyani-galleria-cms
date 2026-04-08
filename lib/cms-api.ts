@@ -13,6 +13,7 @@ import type {
   CmsJournalLine,
   CmsLedgerAccount,
   CmsOrder,
+  CmsPaymentMethod,
   CmsProduct,
   CmsRequest,
   CmsReview,
@@ -30,6 +31,11 @@ type CmsGraphqlResponse = {
     description: string | null;
     sort_order: number;
     is_visible: boolean;
+    meta_title: string | null;
+    meta_description: string | null;
+    keywords: string | null;
+    og_title: string | null;
+    og_description: string | null;
   }>;
   subcategories: Array<{
     id: string;
@@ -39,6 +45,11 @@ type CmsGraphqlResponse = {
     description: string | null;
     sort_order: number;
     status: string;
+    meta_title: string | null;
+    meta_description: string | null;
+    keywords: string | null;
+    og_title: string | null;
+    og_description: string | null;
   }>;
   products: Array<{
     id: string;
@@ -63,6 +74,11 @@ type CmsGraphqlResponse = {
     is_deal_of_the_day: boolean;
     status: string;
     created_at: string;
+    meta_title: string | null;
+    meta_description: string | null;
+    keywords: string | null;
+    og_title: string | null;
+    og_description: string | null;
   }>;
   product_features: Array<{
     product_id: string;
@@ -153,12 +169,14 @@ type CmsGraphqlResponse = {
     due_date: string | null;
     subtotal_pkr: number;
     discount_pkr: number;
+    shipping_pkr: number;
     tax_pkr: number;
     total_pkr: number;
     paid_pkr: number;
     balance_pkr: number;
     status: string;
     notes: string | null;
+    payment_method_id: string | null;
   }>;
   invoice_lines: Array<{
     id: string;
@@ -168,6 +186,7 @@ type CmsGraphqlResponse = {
     quantity: number;
     unit_price_pkr: number;
     line_total_pkr: number;
+    our_cost_pkr: number;
     sort_order: number;
   }>;
   journal_entries: Array<{
@@ -186,6 +205,17 @@ type CmsGraphqlResponse = {
     debit_pkr: number;
     credit_pkr: number;
   }>;
+  payment_methods: Array<{
+    id: string;
+    name: string;
+    type: string;
+    account_title: string | null;
+    account_number: string | null;
+    bank_name: string | null;
+    instructions: string | null;
+    is_active: boolean;
+    sort_order: number;
+  }>;
 };
 
 export type CmsDataBundle = {
@@ -201,6 +231,7 @@ export type CmsDataBundle = {
   brandFlags: CmsBrandFlag[];
   accountingStats: CmsAccountingStat[];
   invoices: CmsInvoice[];
+  paymentMethods: CmsPaymentMethod[];
   ledgerAccounts: CmsLedgerAccount[];
   journalEntries: CmsJournalEntry[];
 };
@@ -214,6 +245,11 @@ const CMS_QUERY = `
       description
       sort_order
       is_visible
+      meta_title
+      meta_description
+      keywords
+      og_title
+      og_description
     }
     subcategories(order_by: { sort_order: asc }) {
       id
@@ -223,6 +259,11 @@ const CMS_QUERY = `
       description
       sort_order
       status
+      meta_title
+      meta_description
+      keywords
+      og_title
+      og_description
     }
     products(order_by: { created_at: desc }) {
       id
@@ -247,6 +288,11 @@ const CMS_QUERY = `
       is_deal_of_the_day
       status
       created_at
+      meta_title
+      meta_description
+      keywords
+      og_title
+      og_description
     }
     product_features(order_by: [{ product_id: asc }, { sort_order: asc }]) {
       product_id
@@ -337,12 +383,14 @@ const CMS_QUERY = `
       due_date
       subtotal_pkr
       discount_pkr
+      shipping_pkr
       tax_pkr
       total_pkr
       paid_pkr
       balance_pkr
       status
       notes
+      payment_method_id
     }
     invoice_lines(order_by: [{ invoice_id: asc }, { sort_order: asc }]) {
       id
@@ -352,6 +400,7 @@ const CMS_QUERY = `
       quantity
       unit_price_pkr
       line_total_pkr
+      our_cost_pkr
       sort_order
     }
     journal_entries(order_by: { entry_date: desc }) {
@@ -369,6 +418,17 @@ const CMS_QUERY = `
       description
       debit_pkr
       credit_pkr
+    }
+    payment_methods(order_by: { sort_order: asc }) {
+      id
+      name
+      type
+      account_title
+      account_number
+      bank_name
+      instructions
+      is_active
+      sort_order
     }
   }
 `;
@@ -458,6 +518,11 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     isVisible: category.is_visible,
     itemCount: data.products.filter((product) => product.category_id === category.id).length,
     visibility: category.is_visible ? "Live" : "Hidden",
+    metaTitle: category.meta_title,
+    metaDescription: category.meta_description,
+    keywords: category.keywords,
+    ogTitle: category.og_title,
+    ogDescription: category.og_description,
   }));
 
   const subcategories: CmsSubcategory[] = data.subcategories.map((subcategory) => ({
@@ -470,6 +535,11 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     sortOrder: subcategory.sort_order,
     itemCount: data.products.filter((product) => product.subcategory_id === subcategory.id).length,
     status: subcategory.status === "live" ? "Live" : "Draft",
+    metaTitle: subcategory.meta_title,
+    metaDescription: subcategory.meta_description,
+    keywords: subcategory.keywords,
+    ogTitle: subcategory.og_title,
+    ogDescription: subcategory.og_description,
   }));
 
   const products: CmsProduct[] = data.products.map((product) => ({
@@ -517,6 +587,11 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
       topRated: product.is_top_rated,
       dealOfDay: product.is_deal_of_the_day,
     },
+    metaTitle: product.meta_title,
+    metaDescription: product.meta_description,
+    keywords: product.keywords,
+    ogTitle: product.og_title,
+    ogDescription: product.og_description,
   }));
 
   const reviews: CmsReview[] = data.reviews.map((review) => {
@@ -693,12 +768,21 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     return fallback;
   };
 
+  // Debit-normal accounts: Asset, Expense, COGS → balance = debits - credits
+  // Credit-normal accounts: Liability, Revenue, Equity → balance = credits - debits
+  const isDebitNormal = (cat: string) => {
+    const c = cat.toLowerCase();
+    return c === "asset" || c === "expense" || c === "cogs";
+  };
+
   const ledgerAccounts: CmsLedgerAccount[] = data.accounting_accounts.map((account) => {
     const relatedLines = data.journal_lines.filter((line) => line.account_id === account.id);
-    const balance = relatedLines.reduce(
+    const rawBalance = relatedLines.reduce(
       (sum, line) => sum + Number(line.debit_pkr ?? 0) - Number(line.credit_pkr ?? 0),
       0,
     );
+    // For credit-normal accounts, flip the sign so positive = normal balance
+    const balance = isDebitNormal(account.category) ? rawBalance : -rawBalance;
 
     return {
       id: account.id,
@@ -731,6 +815,7 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
       dueDate: formatDateLabel(invoice.due_date),
       subtotalPkrValue: Number(invoice.subtotal_pkr ?? 0),
       discountPkrValue: Number(invoice.discount_pkr ?? 0),
+      shippingPkrValue: Number(invoice.shipping_pkr ?? 0),
       taxPkrValue: Number(invoice.tax_pkr ?? 0),
       totalPkrValue: Number(invoice.total_pkr ?? 0),
       paidPkrValue: Number(invoice.paid_pkr ?? 0),
@@ -741,6 +826,7 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
       notes: invoice.notes ?? "",
       linesCount: invoiceLineCountByInvoice.get(invoice.id) ?? 0,
       linkedOrder: linkedOrder ? `Linked: ${linkedOrder}` : "Standalone",
+      paymentMethodId: invoice.payment_method_id ?? null,
       lines: (invoiceLinesByInvoice.get(invoice.id) ?? []).map((line) => ({
         id: line.id,
         productId: line.product_id,
@@ -748,6 +834,7 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
         quantity: Number(line.quantity ?? 0),
         unitPricePkr: Number(line.unit_price_pkr ?? 0),
         lineTotalPkr: Number(line.line_total_pkr ?? 0),
+        ourCostPkr: Number(line.our_cost_pkr ?? 0),
       })),
       statusCode:
         invoice.status === "paid"
@@ -909,6 +996,34 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
       description: settingText("brand_voice", "Soft, polished, handmade, premium"),
       enabled: settingEnabled("brand_voice", true),
     },
+    {
+      key: "contact_whatsapp",
+      label: "WhatsApp number",
+      text: settingText("contact_whatsapp", "+92 3XX XXXXXXX"),
+      description: "WhatsApp number for payment confirmations and customer support",
+      enabled: settingEnabled("contact_whatsapp", true),
+    },
+    {
+      key: "contact_phone",
+      label: "Phone number",
+      text: settingText("contact_phone", "+92 3XX XXXXXXX"),
+      description: "Primary phone number shown on invoices and contact page",
+      enabled: settingEnabled("contact_phone", true),
+    },
+    {
+      key: "contact_email",
+      label: "Email address",
+      text: settingText("contact_email", "hello@kiyanigalleria.com"),
+      description: "Business email shown on invoices and contact page",
+      enabled: settingEnabled("contact_email", true),
+    },
+    {
+      key: "contact_address",
+      label: "Business address",
+      text: settingText("contact_address", "Arifwala, Punjab, Pakistan"),
+      description: "Physical address shown on invoices",
+      enabled: settingEnabled("contact_address", true),
+    },
   ];
 
   const paidOrders = data.orders.filter((order) => order.payment_status === "paid");
@@ -952,6 +1067,17 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     brandFlags,
     accountingStats,
     invoices,
+    paymentMethods: (data.payment_methods ?? []).map((pm) => ({
+      id: pm.id,
+      name: pm.name,
+      type: pm.type,
+      accountTitle: pm.account_title ?? "",
+      accountNumber: pm.account_number ?? "",
+      bankName: pm.bank_name ?? "",
+      instructions: pm.instructions ?? "",
+      isActive: pm.is_active,
+      sortOrder: pm.sort_order,
+    })),
     ledgerAccounts,
     journalEntries,
   };

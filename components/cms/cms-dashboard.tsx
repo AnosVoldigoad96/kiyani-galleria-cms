@@ -128,6 +128,8 @@ export function CmsDashboard() {
         journalEntries={filteredJournalEntries}
         ledgerAccounts={filteredLedgerAccounts}
         orders={data?.orders ?? []}
+        products={data?.products ?? []}
+        paymentMethods={data?.paymentMethods ?? []}
         onRefresh={refetch}
       />
     );
@@ -138,11 +140,14 @@ export function CmsDashboard() {
       <OrdersSection
         orders={filteredOrders}
         products={data?.products ?? []}
+        invoices={data?.invoices ?? []}
+        paymentMethods={data?.paymentMethods ?? []}
+        accounts={data?.ledgerAccounts ?? []}
         onRefresh={refetch}
       />
     );
   } else if (activeSection === "requests") {
-    sectionView = <RequestsSection requests={filteredRequests} onRefresh={refetch} />;
+    sectionView = <RequestsSection requests={filteredRequests} products={data?.products ?? []} onRefresh={refetch} />;
   } else if (activeSection === "users") {
     sectionView = <UsersSection users={filteredUsers} onRefresh={refetch} />;
   } else if (activeSection === "brand") {
@@ -176,6 +181,16 @@ export function CmsDashboard() {
           activeSection={activeSection}
           isOpen={sidebarOpen}
           isCollapsed={sidebarCollapsed}
+          counts={{
+            dashboard: data?.stats.length ?? 0,
+            products: data?.products.length ?? 0,
+            accounting: data?.invoices.length ?? 0,
+            reviews: data?.reviews.length ?? 0,
+            orders: data?.orders.length ?? 0,
+            requests: data?.requests.length ?? 0,
+            users: data?.users.length ?? 0,
+            brand: data?.brandFlags.length ?? 0,
+          }}
           onClose={() => setSidebarOpen(false)}
           onToggleCollapse={handleToggleCollapse}
           onSectionChange={setActiveSection}

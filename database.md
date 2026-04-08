@@ -98,6 +98,11 @@ Columns:
 - `description text`
 - `sort_order integer`
 - `is_visible boolean`
+- `meta_title text` (AI-generated SEO title, max 60 chars)
+- `meta_description text` (AI-generated meta description, max 160 chars)
+- `keywords text` (comma-separated search keywords)
+- `og_title text` (Open Graph social sharing title)
+- `og_description text` (Open Graph social sharing description)
 - `created_at timestamptz`
 - `updated_at timestamptz`
 
@@ -114,6 +119,11 @@ Columns:
 - `description text`
 - `sort_order integer`
 - `status public.record_status`
+- `meta_title text` (AI-generated SEO title)
+- `meta_description text` (AI-generated meta description)
+- `keywords text` (comma-separated search keywords)
+- `og_title text` (Open Graph title)
+- `og_description text` (Open Graph description)
 - `created_at timestamptz`
 - `updated_at timestamptz`
 
@@ -151,6 +161,11 @@ Columns:
 - `status public.record_status`
 - `created_by uuid references public.profiles(id)`
 - `updated_by uuid references public.profiles(id)`
+- `meta_title text` (AI-generated SEO title, max 60 chars)
+- `meta_description text` (AI-generated meta description, max 160 chars)
+- `keywords text` (comma-separated extensive search keywords, used for frontend search)
+- `og_title text` (Open Graph social sharing title)
+- `og_description text` (Open Graph social sharing description)
 - `created_at timestamptz`
 - `updated_at timestamptz`
 
@@ -158,6 +173,7 @@ Purpose:
 
 - Supports the CMS product management requirements
 - Stores PKR pricing, discount toggle, merchandising flags, and status
+- SEO fields are AI-generated via Groq Llama API and editable by staff
 
 ### `public.product_features`
 

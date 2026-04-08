@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 
-import { motion } from "framer-motion";
-import { Pencil, Plus, Reply, Trash2 } from "lucide-react";
+import { ChevronDown, Pencil, Plus, Reply, ShoppingBag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { CmsModal } from "@/components/cms/cms-modal";
 import { ConfirmDeleteModal } from "@/components/cms/products/confirm-delete-modal";
+import { OrderEditor, type RequestPrefill } from "@/components/cms/orders/order-editor";
 import { FilterBar } from "@/components/cms/ui/filter-bar";
 import {
   ActionButton,
@@ -16,7 +16,7 @@ import {
   surfaceClassName,
 } from "@/components/cms/cms-shared";
 import { Button } from "@/components/ui/button";
-import type { CmsRequest } from "@/lib/cms-data";
+import type { CmsProduct, CmsRequest } from "@/lib/cms-data";
 
 import {
   createRequest,
@@ -29,6 +29,7 @@ import {
 
 type RequestsSectionProps = {
   requests: CmsRequest[];
+  products: CmsProduct[];
   onRefresh?: () => void;
 };
 
@@ -92,7 +93,134 @@ function draftFromRequest(request: CmsRequest | null): RequestDraft {
   };
 }
 
-export function RequestsSection({ requests, onRefresh }: RequestsSectionProps) {
+function RequestsTable({
+  requests,
+  isSaving,
+  onEdit,
+  onQuote,
+  onConvert,
+  onDelete,
+}: {
+  requests: CmsRequest[];
+  isSaving: boolean;
+  onEdit: (r: CmsRequest) => void;
+  onQuote: (r: CmsRequest) => void;
+  onConvert: (r: CmsRequest) => void;
+  onDelete: (r: CmsRequest) => void;
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  if (requests.length === 0) {
+    return (
+      <div className={surfaceClassName("p-8")}>
+        <p className="text-sm text-muted-foreground">No custom requests found.</p>
+      </div>
+    );
+  }
+
+  const thClass = "px-3 sm:px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-[var(--muted-foreground)]";
+  const tdClass = "px-3 sm:px-4 py-3 text-sm";
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-[var(--border)] bg-white">
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-[var(--border)]">
+            <th className={`${thClass} w-8`} />
+            <th className={thClass}>Request</th>
+            <th className={`${thClass} hidden sm:table-cell`}>Type</th>
+            <th className={thClass}>Status</th>
+            <th className={`${thClass} hidden md:table-cell`}>Budget</th>
+            <th className={`${thClass} hidden lg:table-cell`}>Due</th>
+            <th className={`${thClass} text-right`}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {requests.map((request) => {
+            const isExpanded = expandedId === request.requestId;
+            return (
+              <Fragment key={request.requestId}>
+                <tr
+                  className="border-b border-[var(--border)]/50 transition-colors hover:bg-black/[0.015] cursor-pointer"
+                  onClick={() => setExpandedId(isExpanded ? null : request.requestId)}
+                >
+                  <td className={tdClass}>
+                    <ChevronDown
+                      size={14}
+                      className={`text-[var(--muted-foreground)] transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                    />
+                  </td>
+                  <td className={tdClass}>
+                    <span className="font-semibold text-[var(--foreground)] block">{request.customer}</span>
+                    <span className="text-xs text-[var(--muted-foreground)]">{request.requestNo}</span>
+                    <span className="sm:hidden block mt-0.5 text-xs text-[var(--muted-foreground)]">{request.type}</span>
+                  </td>
+                  <td className={`${tdClass} font-medium hidden sm:table-cell`}>{request.type}</td>
+                  <td className={tdClass}>
+                    <div className="flex flex-col gap-1">
+                      <StatusBadge tone={sectionTone(request.status)}>{request.status}</StatusBadge>
+                      <StatusBadge tone={sectionTone(request.priority)}>{request.priority}</StatusBadge>
+                    </div>
+                  </td>
+                  <td className={`${tdClass} font-semibold text-[var(--primary)] hidden md:table-cell`}>{request.budgetPkr}</td>
+                  <td className={`${tdClass} text-[var(--muted-foreground)] hidden lg:table-cell`}>{request.dueDate}</td>
+                  <td className={`${tdClass} text-right`}>
+                    <div className="flex items-center justify-end gap-1 sm:gap-2" onClick={(e) => e.stopPropagation()}>
+                      {request.statusCode !== "completed" && request.statusCode !== "cancelled" && (
+                        <ActionButton onClick={() => onConvert(request)} disabled={isSaving}>
+                          <ShoppingBag className="size-3" />
+                        </ActionButton>
+                      )}
+                      <ActionButton onClick={() => onEdit(request)} disabled={isSaving}>
+                        <Pencil className="size-3" />
+                      </ActionButton>
+                      <ActionButton onClick={() => onQuote(request)} disabled={isSaving}>
+                        <Reply className="size-3" />
+                      </ActionButton>
+                      <ActionButton tone="danger" onClick={() => onDelete(request)} disabled={isSaving}>
+                        <Trash2 className="size-3" />
+                      </ActionButton>
+                    </div>
+                  </td>
+                </tr>
+                {isExpanded && (
+                  <tr className="border-b border-[var(--border)]/50 bg-[var(--muted)]/30">
+                    <td colSpan={7} className="px-4 sm:px-6 py-4">
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted-foreground)] mb-1">Contact</p>
+                          <p className="text-sm font-semibold text-[var(--foreground)]">{request.customer}</p>
+                          <p className="text-sm text-[var(--muted-foreground)]">{request.customerEmail || "No email"}</p>
+                          <p className="text-sm text-[var(--muted-foreground)]">{request.customerPhone || "No phone"}</p>
+                        </div>
+                        <div className="md:hidden">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted-foreground)] mb-1">Budget</p>
+                          <p className="text-sm font-semibold text-[var(--primary)]">{request.budgetPkr}</p>
+                        </div>
+                        <div className="lg:hidden">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted-foreground)] mb-1">Due Date</p>
+                          <p className="text-sm text-[var(--foreground)]">{request.dueDate}</p>
+                        </div>
+                        <div className="sm:col-span-2 lg:col-span-2">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted-foreground)] mb-1">Brief</p>
+                          <p className="text-sm leading-relaxed text-[var(--foreground)] italic">
+                            &ldquo;{request.brief}&rdquo;
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function RequestsSection({ requests, products, onRefresh }: RequestsSectionProps) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorRequest, setEditorRequest] = useState<CmsRequest | null>(null);
   const [draft, setDraft] = useState<RequestDraft>(() => draftFromRequest(null));
@@ -101,6 +229,34 @@ export function RequestsSection({ requests, onRefresh }: RequestsSectionProps) {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
+  const [orderEditorOpen, setOrderEditorOpen] = useState(false);
+  const [convertingRequest, setConvertingRequest] = useState<CmsRequest | null>(null);
+
+  const convertToOrder = (request: CmsRequest) => {
+    setConvertingRequest(request);
+    setOrderEditorOpen(true);
+  };
+
+  const handleOrderCreated = async () => {
+    // Update request status to in_progress after order is created
+    if (convertingRequest) {
+      try {
+        await updateRequest(convertingRequest.requestId, { status: "in_progress" });
+      } catch { /* non-critical */ }
+    }
+    setOrderEditorOpen(false);
+    setConvertingRequest(null);
+    onRefresh?.();
+  };
+
+  const requestPrefill: RequestPrefill | null = convertingRequest ? {
+    orderNo: convertingRequest.requestNo,
+    customerName: convertingRequest.customer,
+    customerEmail: convertingRequest.customerEmail,
+    customerPhone: convertingRequest.customerPhone,
+    notes: `[${convertingRequest.type}] ${convertingRequest.brief}`,
+    budgetPkr: convertingRequest.budgetPkrValue ?? 0,
+  } : null;
 
   const filteredRequests = useMemo(() => {
     return requests.filter((r) => {
@@ -267,78 +423,67 @@ export function RequestsSection({ requests, onRefresh }: RequestsSectionProps) {
         onClearAll={() => { setStatusFilter("all"); setPriorityFilter("all"); }}
       />
 
-      <section className="grid gap-6 xl:grid-cols-3">
-        {filteredRequests.length ? (
-          filteredRequests.map((request, index) => (
-            <motion.article
-              key={request.requestId}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: index * 0.08 }}
-              className={surfaceClassName("group p-8")}
-            >
-              <div className="flex items-center justify-between gap-3">
+      {/* Mobile: Card layout */}
+      <div className="sm:hidden space-y-3">
+        {filteredRequests.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            No custom requests found.
+          </div>
+        ) : (
+          filteredRequests.map((request) => (
+            <div key={request.requestId} className="rounded-xl border border-border bg-white p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
-                    {request.requestNo}
-                  </p>
-                  <h2 className="mt-2 text-2xl font-bold text-[var(--foreground)] transition-colors group-hover:text-[var(--primary)]">
-                    {request.type}
-                  </h2>
+                  <p className="font-semibold text-foreground">{request.customer}</p>
+                  <p className="text-xs text-muted-foreground">{request.requestNo}</p>
                 </div>
                 <StatusBadge tone={sectionTone(request.status)}>{request.status}</StatusBadge>
               </div>
-              <div className="mt-6 flex items-center gap-2 border-y border-[var(--border)]/30 py-4">
-                <div className="flex size-8 items-center justify-center rounded-full bg-black/5 text-xs font-bold text-[var(--foreground)]">
-                  {request.customer[0]}
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-[var(--foreground)]">{request.customer}</p>
-                  <p className="truncate text-xs text-[var(--muted-foreground)]">
-                    {request.customerEmail || "No email"}
-                  </p>
-                </div>
-              </div>
-              <p className="mt-5 text-sm italic leading-relaxed text-[var(--muted-foreground)]">
-                &ldquo;{request.brief}&rdquo;
-              </p>
-              <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <div className="flex items-center justify-between rounded-2xl border border-[var(--border)]/50 bg-black/[0.02] px-4 py-3 text-xs font-bold text-[var(--foreground)]">
-                  <span className="uppercase tracking-tighter text-[var(--muted-foreground)]">Due</span>
-                  {request.dueDate}
-                </div>
-                <div className="flex items-center justify-between rounded-2xl border border-[var(--border)]/50 bg-black/[0.02] px-4 py-3 text-xs font-bold text-[var(--primary)]">
-                  <span className="uppercase tracking-tighter text-[var(--muted-foreground)]">Budget</span>
-                  {request.budgetPkr}
-                </div>
-              </div>
-              <div className="mt-8 flex flex-wrap items-center gap-3">
+              <p className="text-sm text-muted-foreground italic line-clamp-2">&ldquo;{request.brief}&rdquo;</p>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">{request.type}</span>
                 <StatusBadge tone={sectionTone(request.priority)}>{request.priority}</StatusBadge>
-                <ActionButton onClick={() => openEdit(request)} disabled={isSaving}>
-                  <Pencil className="size-3" />
-                  Update
-                </ActionButton>
-                <ActionButton onClick={() => quoteRequest(request)} disabled={isSaving}>
-                  <Reply className="size-3" />
-                  Quote
-                </ActionButton>
-                <ActionButton
-                  tone="danger"
-                  onClick={() => setDeleteTarget(request)}
-                  disabled={isSaving}
-                >
-                  <Trash2 className="size-3" />
-                  Delete
-                </ActionButton>
               </div>
-            </motion.article>
+              <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                <div className="text-xs text-muted-foreground">
+                  {request.budgetPkr !== "PKR 0" && <span className="text-primary font-semibold mr-3">{request.budgetPkr}</span>}
+                  {request.dueDate !== "No date" && <span>{request.dueDate}</span>}
+                </div>
+                <div className="flex gap-1">
+                  {request.statusCode !== "completed" && request.statusCode !== "cancelled" && (
+                    <ActionButton onClick={() => convertToOrder(request)} disabled={isSaving}><ShoppingBag className="size-3" /></ActionButton>
+                  )}
+                  <ActionButton onClick={() => openEdit(request)} disabled={isSaving}><Pencil className="size-3" /></ActionButton>
+                  <ActionButton onClick={() => quoteRequest(request)} disabled={isSaving}><Reply className="size-3" /></ActionButton>
+                  <ActionButton tone="danger" onClick={() => setDeleteTarget(request)} disabled={isSaving}><Trash2 className="size-3" /></ActionButton>
+                </div>
+              </div>
+            </div>
           ))
-        ) : (
-          <article className={surfaceClassName("p-8 xl:col-span-3")}>
-            <p className="text-sm text-muted-foreground">No custom requests found.</p>
-          </article>
         )}
-      </section>
+      </div>
+
+      {/* Desktop: Table layout */}
+      <div className="hidden sm:block">
+        <RequestsTable
+          requests={filteredRequests}
+          isSaving={isSaving}
+          onEdit={openEdit}
+          onQuote={quoteRequest}
+          onConvert={convertToOrder}
+          onDelete={(r) => setDeleteTarget(r)}
+        />
+      </div>
+
+      {/* Order Editor for converting request to order */}
+      <OrderEditor
+        open={orderEditorOpen}
+        editingOrder={null}
+        products={products}
+        prefillFromRequest={requestPrefill}
+        onClose={() => { setOrderEditorOpen(false); setConvertingRequest(null); }}
+        onRefresh={handleOrderCreated}
+      />
 
       <CmsModal
         open={editorOpen}

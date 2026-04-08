@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition } from "react";
+import Image from "next/image";
 
 import { LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
@@ -10,6 +11,7 @@ type CmsSidebarProps = {
   activeSection: SectionId;
   isOpen: boolean;
   isCollapsed: boolean;
+  counts?: Partial<Record<SectionId, number>>;
   onClose: () => void;
   onToggleCollapse: () => void;
   onSectionChange: (section: SectionId) => void;
@@ -20,6 +22,7 @@ export function CmsSidebar({
   activeSection,
   isOpen,
   isCollapsed,
+  counts,
   onClose,
   onToggleCollapse,
   onSectionChange,
@@ -43,9 +46,19 @@ export function CmsSidebar({
         )}
       </button>
 
-      <div className="flex h-14 items-center border-b border-border px-4">
-        <div className={`overflow-hidden transition-all duration-300 ${isCollapsed ? "lg:opacity-0 lg:w-0" : "lg:opacity-100"}`}>
-          <span className="text-sm font-semibold text-foreground">Kiyani CMS</span>
+      <div className="flex h-14 items-center border-b border-border px-3">
+        {/* Collapsed: icon only */}
+        <div className={`transition-all duration-300 ${isCollapsed ? "lg:flex hidden" : "lg:hidden"} items-center justify-center w-full`}>
+          <div className="relative size-8">
+            <Image src="/icon.png" alt="KG" fill sizes="32px" className="object-contain" />
+          </div>
+        </div>
+        {/* Expanded: logo + brand name */}
+        <div className={`overflow-hidden transition-all duration-300 flex items-center gap-2 ${isCollapsed ? "lg:opacity-0 lg:w-0" : "lg:opacity-100"}`}>
+          <div className="relative h-8 w-8 shrink-0">
+            <Image src="/icon.png" alt="KG" fill sizes="32px" className="object-contain" />
+          </div>
+          <span className="text-sm font-bold text-foreground whitespace-nowrap">Kiyani Galleria</span>
         </div>
         {!isCollapsed && (
           <button
@@ -94,13 +107,13 @@ export function CmsSidebar({
                     >
                       <Icon className={`size-4 shrink-0 ${active ? "text-primary" : ""}`} />
                       <span className={isCollapsed ? "lg:hidden" : ""}>{section.label}</span>
-                      {section.count != null && (
+                      {counts?.[section.id as SectionId] != null && (
                         <span
                           className={`ml-auto text-xs tabular-nums text-muted-foreground transition-opacity ${
                             isCollapsed ? "lg:hidden" : ""
                           }`}
                         >
-                          {section.count}
+                          {counts[section.id as SectionId]}
                         </span>
                       )}
                     </button>

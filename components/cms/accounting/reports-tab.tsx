@@ -28,6 +28,7 @@ export function ReportsTab({ ledgerAccounts, invoices }: Props) {
     const sumCat = (cat: string) =>
       ledgerAccounts.filter((a) => a.category === cat).reduce((s, a) => s + parsePkr(a.balancePkr), 0);
 
+    // Balances are now account-type aware (positive = normal balance)
     const revenue = sumCat("Revenue");
     const cogs = sumCat("COGS");
     const grossProfit = revenue - cogs;
@@ -35,6 +36,23 @@ export function ReportsTab({ ledgerAccounts, invoices }: Props) {
     const netIncome = grossProfit - expenses;
 
     return { revenue, cogs, grossProfit, expenses, netIncome };
+  }, [ledgerAccounts]);
+
+  const trialBalance = useMemo(() => {
+    let totalDebits = 0;
+    let totalCredits = 0;
+    // Debit-normal: Asset, Expense, COGS — positive balance = debit
+    // Credit-normal: Liability, Revenue, Equity — positive balance = credit
+    for (const a of ledgerAccounts) {
+      const bal = parsePkr(a.balancePkr);
+      const isDebitNormal = a.category === "Asset" || a.category === "Expense" || a.category === "COGS";
+      if (isDebitNormal) {
+        if (bal >= 0) totalDebits += bal; else totalCredits += Math.abs(bal);
+      } else {
+        if (bal >= 0) totalCredits += bal; else totalDebits += Math.abs(bal);
+      }
+    }
+    return { totalDebits, totalCredits, balanced: Math.abs(totalDebits - totalCredits) < 0.01 };
   }, [ledgerAccounts]);
 
   const aging = useMemo(() => {
@@ -127,6 +145,28 @@ export function ReportsTab({ ledgerAccounts, invoices }: Props) {
         <div className="mt-4 border-t border-border pt-3 flex justify-between text-sm font-semibold">
           <span>Total Outstanding</span>
           <span className="tabular-nums">{formatPkr(aging.buckets.reduce((s, b) => s + b.total, 0))}</span>
+        </div>
+      </div>
+      {/* Trial Balance */}
+      <div className={surfaceClassName("p-6 lg:col-span-2")}>
+        <h3 className="text-sm font-semibold text-foreground">Trial Balance</h3>
+        <p className="mt-1 text-xs text-muted-foreground">Verifies that total debits equal total credits across all accounts.</p>
+
+        <div className="mt-4 grid grid-cols-2 gap-4">
+          <div className="rounded-lg bg-muted/50 p-4 text-center">
+            <p className="text-xs text-muted-foreground mb-1">Total Debits</p>
+            <p className="text-xl font-bold tabular-nums text-foreground">{formatPkr(trialBalance.totalDebits)}</p>
+          </div>
+          <div className="rounded-lg bg-muted/50 p-4 text-center">
+            <p className="text-xs text-muted-foreground mb-1">Total Credits</p>
+            <p className="text-xl font-bold tabular-nums text-foreground">{formatPkr(trialBalance.totalCredits)}</p>
+          </div>
+        </div>
+        <div className={cn(
+          "mt-3 rounded-lg p-3 text-center text-sm font-semibold",
+          trialBalance.balanced ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
+        )}>
+          {trialBalance.balanced ? "✓ Books are balanced" : `✗ Imbalance: ${formatPkr(Math.abs(trialBalance.totalDebits - trialBalance.totalCredits))}`}
         </div>
       </div>
     </div>

@@ -485,6 +485,28 @@ async function deleteLinkedAccounting(orderId: string) {
   const journalIds = context.journal_entries.map((journal) => journal.id);
 
   if (invoiceIds.length) {
+    // Delete journal entries created by invoice sync (reference_type = "invoice")
+    for (const invId of invoiceIds) {
+      const invJournals = await requestAdminGraphql<{ journal_entries: Array<{ id: string }> }>(
+        `query InvoiceJournals($refId: uuid!) {
+          journal_entries(where: { reference_type: { _eq: "invoice" }, reference_id: { _eq: $refId } }) { id }
+        }`,
+        { refId: invId },
+      ).catch(() => ({ body: { data: { journal_entries: [] } } }));
+
+      const invJournalIds = invJournals.body.data?.journal_entries?.map((j) => j.id) ?? [];
+      if (invJournalIds.length) {
+        await requestAdminGraphql(
+          `mutation DelInvJournalLines($ids: [uuid!]!) { delete_journal_lines(where: { journal_entry_id: { _in: $ids } }) { affected_rows } }`,
+          { ids: invJournalIds },
+        ).catch(() => {});
+        await requestAdminGraphql(
+          `mutation DelInvJournals($ids: [uuid!]!) { delete_journal_entries(where: { id: { _in: $ids } }) { affected_rows } }`,
+          { ids: invJournalIds },
+        ).catch(() => {});
+      }
+    }
+
     const deleteInvoiceLinesResponse = await requestAdminGraphql<{
       delete_invoice_lines: { affected_rows: number };
     }>(

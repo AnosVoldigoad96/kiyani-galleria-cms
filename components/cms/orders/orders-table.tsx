@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Pencil, Trash2, Package } from "lucide-react";
+import { ChevronRight, Pencil, Trash2, Package } from "lucide-react";
 
 import { DataTable, type Column } from "@/components/cms/ui/data-table";
 import { FilterBar } from "@/components/cms/ui/filter-bar";
@@ -41,6 +41,7 @@ export function OrdersTable({ orders, onRowClick, onEdit, onDelete }: OrdersTabl
         <div>
           <p className="font-medium text-foreground">{r.orderNo}</p>
           <p className="text-xs text-primary font-medium">{r.totalPkr}</p>
+          <p className="sm:hidden text-xs text-muted-foreground mt-0.5">{r.customer.name}</p>
         </div>
       ),
     },
@@ -49,6 +50,7 @@ export function OrdersTable({ orders, onRowClick, onEdit, onDelete }: OrdersTabl
       header: "Customer",
       sortable: true,
       sortValue: (r) => r.customer.name,
+      hideBelow: "sm",
       render: (r) => (
         <div>
           <p className="font-medium text-foreground">{r.customer.name}</p>
@@ -141,20 +143,64 @@ export function OrdersTable({ orders, onRowClick, onEdit, onDelete }: OrdersTabl
         onClearAll={() => { setPaymentFilter("all"); setFulfillmentFilter("all"); }}
       />
 
-      <DataTable
-        columns={columns}
-        data={filtered}
-        rowKey={(r) => r.orderId}
-        onRowClick={onRowClick}
-        pageSize={20}
-        emptyState={
+      {/* Mobile: Card layout */}
+      <div className="sm:hidden space-y-3">
+        {filtered.length === 0 ? (
           <EmptyState
             icon={Package}
             title="No orders found"
             description={hasFilters ? "Try adjusting your filters." : "Create your first order to get started."}
           />
-        }
-      />
+        ) : (
+          filtered.map((order) => (
+            <div
+              key={order.orderId}
+              onClick={() => onRowClick(order)}
+              className="rounded-xl border border-border bg-white p-4 space-y-3 active:bg-muted/30 transition-colors cursor-pointer"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold text-foreground">{order.customer.name}</p>
+                  <p className="text-xs text-muted-foreground">{order.orderNo}</p>
+                </div>
+                <ChevronRight className="size-4 text-muted-foreground shrink-0 mt-1" />
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <StatusBadge tone={sectionTone(order.payment)}>{order.payment}</StatusBadge>
+                  <StatusBadge tone={sectionTone(order.fulfillment)}>{order.fulfillment}</StatusBadge>
+                </div>
+                <p className="text-sm font-semibold text-primary">{order.totalPkr}</p>
+              </div>
+              <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                <p className="text-xs text-muted-foreground">{order.items.length} item{order.items.length !== 1 ? "s" : ""}</p>
+                <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                  <Button variant="outline" size="icon-xs" onClick={() => onEdit(order)} title="Edit"><Pencil className="size-3.5" /></Button>
+                  <Button variant="outline" size="icon-xs" className="text-destructive hover:bg-destructive/10" onClick={() => onDelete(order)} title="Delete"><Trash2 className="size-3.5" /></Button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Desktop: Table layout */}
+      <div className="hidden sm:block">
+        <DataTable
+          columns={columns}
+          data={filtered}
+          rowKey={(r) => r.orderId}
+          onRowClick={onRowClick}
+          pageSize={20}
+          emptyState={
+            <EmptyState
+              icon={Package}
+              title="No orders found"
+              description={hasFilters ? "Try adjusting your filters." : "Create your first order to get started."}
+            />
+          }
+        />
+      </div>
     </div>
   );
 }

@@ -1,9 +1,16 @@
 "use client";
 
-import { requestAdminGraphql } from "@/lib/admin-graphql-client";
-import { nhost, nhostConfigError } from "@/lib/nhost";
+import { getAccessToken, requestAdminGraphql } from "@/lib/admin-graphql-client";
 
 import type { RecordStatus, SubcategoryStatus } from "./types";
+
+export type SeoPayload = {
+  meta_title: string | null;
+  meta_description: string | null;
+  keywords: string | null;
+  og_title: string | null;
+  og_description: string | null;
+};
 
 export type CategoryPayload = {
   name: string;
@@ -11,7 +18,7 @@ export type CategoryPayload = {
   description: string | null;
   sort_order: number;
   is_visible: boolean;
-};
+} & SeoPayload;
 
 export type SubcategoryPayload = {
   name: string;
@@ -20,7 +27,7 @@ export type SubcategoryPayload = {
   sort_order: number;
   status: SubcategoryStatus;
   category_id: string;
-};
+} & SeoPayload;
 
 export type ProductPayload = {
   sku: string;
@@ -46,15 +53,7 @@ export type ProductPayload = {
   status: RecordStatus;
   created_by?: string | null;
   updated_by?: string | null;
-};
-
-function requireNhost() {
-  if (!nhost) {
-    throw new Error(nhostConfigError ?? "Nhost is not configured.");
-  }
-
-  return nhost;
-}
+} & SeoPayload;
 
 function unwrap<T>(
   response: {
@@ -266,38 +265,123 @@ async function replaceProductFeatures(productId: string, features: string[]) {
   unwrap(insertResponse, "Product features were not saved.");
 }
 
-function resolveStorageBaseUrl() {
-  const storageUrl = process.env.NEXT_PUBLIC_NHOST_STORAGE_URL;
-
-  if (storageUrl) {
-    return storageUrl.replace(/\/$/, "");
-  }
-
-  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
-
-  if (!subdomain || !region) {
-    throw new Error("Nhost storage URL is not configured.");
-  }
-
-  return `https://${subdomain}.storage.${region}.nhost.run/v1`;
-}
-
 export async function uploadProductImage(file: File) {
-  const client = requireNhost();
-  const response = await client.storage.uploadFiles({
-    "file[]": [file],
+  const accessToken = await getAccessToken();
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch("/api/upload-image", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: formData,
   });
 
-  const fileId = response.body?.processedFiles?.[0]?.id;
+  const body = await response.json();
 
-  if (!fileId) {
-    throw new Error("Image upload did not return a file id.");
+  if (!response.ok) {
+    throw new Error(body.error || "Image upload failed.");
   }
 
-  const baseUrl = resolveStorageBaseUrl();
   return {
-    fileId,
-    url: `${baseUrl}/files/${fileId}`,
+    fileId: body.fileId as string,
+    url: body.url as string,
   };
+}
+
+export async function deleteProductImage(fileId: string) {
+  const accessToken = await getAccessToken();
+
+  const response = await fetch("/api/upload-image", {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ fileId }),
+  });
+
+  if (!response.ok) {
+    let message = "Failed to delete image.";
+    try {
+      const text = await response.text();
+      if (text) message = JSON.parse(text).error || message;
+    } catch {
+      // empty or non-JSON response
+    }
+    throw new Error(message);
+  }
+  // Success — don't try to parse body (may be empty)
+}
+
+/** Extract the Nhost file ID from a storage URL */
+export function extractFileId(imageUrl: string): string | null {
+  const match = imageUrl.match(/\/files\/([a-f0-9-]+)/i);
+  return match?.[1] ?? null;
+}
+
+export type GenerateSeoInput = {
+  type: "product" | "category" | "subcategory";
+  name: string;
+  description?: string;
+  category?: string;
+  subcategory?: string;
+  price?: number;
+  features?: string[];
+};
+
+export type GenerateSeoResult = {
+  meta_title: string;
+  meta_description: string;
+  keywords: string;
+  og_title: string;
+  og_description: string;
+};
+
+export async function generateSeo(input: GenerateSeoInput): Promise<GenerateSeoResult> {
+  const accessToken = await getAccessToken();
+
+  const response = await fetch("/api/generate-seo", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  const body = await response.json();
+
+  if (!response.ok) {
+    throw new Error(body.error || "Failed to generate SEO content.");
+  }
+
+  return body as GenerateSeoResult;
+}
+
+export async function generateDescription(input: {
+  type: "product" | "category" | "subcategory";
+  name: string;
+  category?: string;
+}): Promise<string> {
+  const accessToken = await getAccessToken();
+
+  const response = await fetch("/api/generate-description", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  const body = await response.json();
+
+  if (!response.ok) {
+    throw new Error(body.error || "Failed to generate description.");
+  }
+
+  return body.description;
 }

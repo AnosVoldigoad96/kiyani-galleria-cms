@@ -4,6 +4,14 @@ export type CmsDashboardStat = {
   detail: string;
 };
 
+export type CmsSeoFields = {
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  keywords?: string | null;
+  ogTitle?: string | null;
+  ogDescription?: string | null;
+};
+
 export type CmsCategory = {
   id: string;
   name: string;
@@ -13,7 +21,7 @@ export type CmsCategory = {
   isVisible?: boolean;
   itemCount: number;
   visibility: "Live" | "Hidden";
-};
+} & CmsSeoFields;
 
 export type CmsSubcategory = {
   id: string;
@@ -25,7 +33,7 @@ export type CmsSubcategory = {
   sortOrder?: number;
   itemCount: number;
   status: "Live" | "Draft";
-};
+} & CmsSeoFields;
 
 export type CmsProduct = {
   id: string;
@@ -58,7 +66,7 @@ export type CmsProduct = {
     topRated: boolean;
     dealOfDay: boolean;
   };
-};
+} & CmsSeoFields;
 
 export type CmsReview = {
   reviewId: string;
@@ -166,6 +174,18 @@ export type CmsAccountingStat = {
   detail: string;
 };
 
+export type CmsPaymentMethod = {
+  id: string;
+  name: string;
+  type: string;
+  accountTitle: string;
+  accountNumber: string;
+  bankName: string;
+  instructions: string;
+  isActive: boolean;
+  sortOrder: number;
+};
+
 export type CmsInvoice = {
   id: string;
   orderId: string | null;
@@ -180,6 +200,7 @@ export type CmsInvoice = {
   dueDate: string;
   subtotalPkrValue: number;
   discountPkrValue: number;
+  shippingPkrValue: number;
   taxPkrValue: number;
   totalPkrValue: number;
   paidPkrValue: number;
@@ -197,7 +218,9 @@ export type CmsInvoice = {
     quantity: number;
     unitPricePkr: number;
     lineTotalPkr: number;
+    ourCostPkr: number;
   }>;
+  paymentMethodId: string | null;
   statusCode: "draft" | "issued" | "partially_paid" | "paid" | "overdue" | "void";
   status: "Draft" | "Issued" | "Paid" | "Partially Paid" | "Overdue" | "Void";
 };

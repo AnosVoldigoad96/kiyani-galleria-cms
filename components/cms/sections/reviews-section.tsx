@@ -273,7 +273,7 @@ export function ReviewsSection({ reviews, onRefresh }: ReviewsSectionProps) {
                     Official Reply
                   </p>
                   <p className="mt-3 text-sm italic leading-relaxed text-[var(--foreground)]/80">
-                    {review.reply ?? "Pending response from the Kiyani Studio team..."}
+                    {review.reply ?? "Pending response from the Kiyani Galleria team..."}
                   </p>
                 </div>
               </div>

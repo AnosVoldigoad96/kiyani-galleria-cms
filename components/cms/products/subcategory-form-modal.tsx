@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { CmsModal } from "@/components/cms/cms-modal";
 import { Button } from "@/components/ui/button";
 import type { CmsCategory, CmsSubcategory } from "@/lib/cms-data";
 
+import { AiDescriptionButton } from "./ai-description-button";
+import { generateDescription, generateSeo } from "./products-api";
+import { SeoFieldsSection } from "./seo-fields-section";
 import type { SubcategoryFormState } from "./types";
 import { fromSubcategoryStatus, slugify, subcategoryToFormState } from "./utils";
 
@@ -34,9 +37,12 @@ export function SubcategoryFormModal({
     subcategoryToFormState(subcategory, fallbackCategoryId),
   );
 
+  const slugTouched = useRef(false);
+
   useEffect(() => {
     if (open) {
       setFormState(subcategoryToFormState(subcategory, fallbackCategoryId));
+      slugTouched.current = Boolean(subcategory);
     }
   }, [open, subcategory, fallbackCategoryId]);
 
@@ -46,13 +52,61 @@ export function SubcategoryFormModal({
   );
 
   const handleChange = (field: keyof SubcategoryFormState, value: string) => {
+    if (field === "slug") {
+      slugTouched.current = true;
+    }
     setFormState((current) => {
       const next = { ...current, [field]: value };
-      if (field === "name" && !current.slug) {
+      if (field === "name" && !slugTouched.current) {
         next.slug = slugify(value);
       }
       return next;
     });
+  };
+
+  const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
+  const [isGeneratingSeo, setIsGeneratingSeo] = useState(false);
+
+  const handleGenerateDescription = async () => {
+    if (!formState.name.trim()) return;
+    setIsGeneratingDesc(true);
+    try {
+      const desc = await generateDescription({
+        type: "subcategory",
+        name: formState.name,
+        category: selectedCategory?.name,
+      });
+      setFormState((prev) => ({ ...prev, description: desc }));
+    } catch (err) {
+      console.error("Description generation failed:", err);
+    } finally {
+      setIsGeneratingDesc(false);
+    }
+  };
+
+  const handleGenerateSeo = async () => {
+    if (!formState.name.trim()) return;
+    setIsGeneratingSeo(true);
+    try {
+      const result = await generateSeo({
+        type: "subcategory",
+        name: formState.name,
+        description: formState.description || undefined,
+        category: selectedCategory?.name,
+      });
+      setFormState((prev) => ({
+        ...prev,
+        metaTitle: result.meta_title,
+        metaDescription: result.meta_description,
+        keywords: result.keywords,
+        ogTitle: result.og_title,
+        ogDescription: result.og_description,
+      }));
+    } catch (err) {
+      console.error("SEO generation failed:", err);
+    } finally {
+      setIsGeneratingSeo(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -88,7 +142,7 @@ export function SubcategoryFormModal({
             value={formState.name}
             onChange={(event) => handleChange("name", event.target.value)}
             className={inputClass}
-            placeholder="Handmade bouquets"
+            placeholder="Painted Dupattas"
           />
         </label>
         <label className="block">
@@ -97,7 +151,7 @@ export function SubcategoryFormModal({
             value={formState.slug}
             onChange={(event) => handleChange("slug", event.target.value)}
             className={inputClass}
-            placeholder="handmade-bouquets"
+            placeholder="painted-dupattas"
           />
         </label>
       </div>
@@ -123,15 +177,18 @@ export function SubcategoryFormModal({
         ) : null}
       </label>
 
-      <label className="block">
-        <span className={labelClass}>Description</span>
+      <div className="block">
+        <span className="flex items-center gap-2">
+          <span className={labelClass}>Description</span>
+          <AiDescriptionButton onClick={handleGenerateDescription} isGenerating={isGeneratingDesc} />
+        </span>
         <textarea
           value={formState.description}
           onChange={(event) => handleChange("description", event.target.value)}
           className={`${inputClass} min-h-[80px]`}
           placeholder="Short customer-facing subcategory description."
         />
-      </label>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
@@ -158,6 +215,17 @@ export function SubcategoryFormModal({
           </select>
         </label>
       </div>
+
+      <SeoFieldsSection
+        metaTitle={formState.metaTitle}
+        metaDescription={formState.metaDescription}
+        keywords={formState.keywords}
+        ogTitle={formState.ogTitle}
+        ogDescription={formState.ogDescription}
+        onChange={(field, value) => handleChange(field as keyof SubcategoryFormState, value)}
+        onGenerate={handleGenerateSeo}
+        isGenerating={isGeneratingSeo}
+      />
 
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
     </CmsModal>

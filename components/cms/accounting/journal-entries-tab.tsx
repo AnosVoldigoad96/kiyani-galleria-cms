@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, BookOpen } from "lucide-react";
+import { ChevronDown, ChevronRight, BookOpen, Plus } from "lucide-react";
 
 import { FilterBar } from "@/components/cms/ui/filter-bar";
 import { EmptyState } from "@/components/cms/ui/empty-state";
 import { StatusBadge } from "@/components/cms/cms-shared";
-import type { CmsJournalEntry } from "@/lib/cms-data";
+import { Button } from "@/components/ui/button";
+import { ManualJournalEditor } from "./manual-journal-editor";
+import type { CmsInvoice, CmsJournalEntry, CmsLedgerAccount } from "@/lib/cms-data";
 
 function statusTone(s: CmsJournalEntry["status"]) {
   if (s === "Posted") return "success" as const;
@@ -14,11 +16,17 @@ function statusTone(s: CmsJournalEntry["status"]) {
   return "danger" as const;
 }
 
-type Props = { entries: CmsJournalEntry[] };
+type Props = {
+  entries: CmsJournalEntry[];
+  accounts: CmsLedgerAccount[];
+  invoices: CmsInvoice[];
+  onRefresh?: () => void;
+};
 
-export function JournalEntriesTab({ entries }: Props) {
+export function JournalEntriesTab({ entries, accounts, invoices, onRefresh }: Props) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const filtered = statusFilter === "all"
     ? entries
@@ -26,7 +34,8 @@ export function JournalEntriesTab({ entries }: Props) {
 
   return (
     <div className="space-y-4">
-      <FilterBar
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <FilterBar
         filters={[{
           label: "Status",
           value: statusFilter,
@@ -41,6 +50,10 @@ export function JournalEntriesTab({ entries }: Props) {
         hasActiveFilters={statusFilter !== "all"}
         onClearAll={() => setStatusFilter("all")}
       />
+        <Button size="sm" onClick={() => setEditorOpen(true)}>
+          <Plus className="mr-1.5 size-3.5" /> New Entry
+        </Button>
+      </div>
 
       {filtered.length === 0 ? (
         <EmptyState icon={BookOpen} title="No journal entries" description="Journal entries will appear here when invoices or orders are synced." />
@@ -132,6 +145,14 @@ export function JournalEntriesTab({ entries }: Props) {
           </table>
         </div>
       )}
+
+      <ManualJournalEditor
+        open={editorOpen}
+        accounts={accounts}
+        invoices={invoices}
+        onClose={() => setEditorOpen(false)}
+        onRefresh={onRefresh}
+      />
     </div>
   );
 }

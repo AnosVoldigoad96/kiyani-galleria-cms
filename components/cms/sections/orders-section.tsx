@@ -8,25 +8,39 @@ import { ConfirmDeleteModal } from "@/components/cms/products/confirm-delete-mod
 import { OrdersTable } from "@/components/cms/orders/orders-table";
 import { OrderDetailPanel } from "@/components/cms/orders/order-detail-panel";
 import { OrderEditor, buildOrderDraft } from "@/components/cms/orders/order-editor";
+import { InvoiceEditor } from "@/components/cms/accounting/invoice-editor";
 import { deleteOrder } from "@/components/cms/orders/orders-api";
 import { toast } from "sonner";
-import type { CmsOrder, CmsProduct } from "@/lib/cms-data";
+import type { CmsInvoice, CmsLedgerAccount, CmsOrder, CmsPaymentMethod, CmsProduct } from "@/lib/cms-data";
 
 type OrdersSectionProps = {
   orders: CmsOrder[];
   products: CmsProduct[];
+  invoices: CmsInvoice[];
+  paymentMethods: CmsPaymentMethod[];
+  accounts: CmsLedgerAccount[];
   onRefresh?: () => void;
 };
 
 type View = { mode: "list" } | { mode: "detail"; order: CmsOrder };
 
-export function OrdersSection({ orders, products, onRefresh }: OrdersSectionProps) {
+export function OrdersSection({ orders, products, invoices, paymentMethods, accounts, onRefresh }: OrdersSectionProps) {
   const [view, setView] = useState<View>({ mode: "list" });
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<CmsOrder | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CmsOrder | null>(null);
+  const [invoiceEditorOpen, setInvoiceEditorOpen] = useState(false);
+  const [invoiceForOrder, setInvoiceForOrder] = useState<CmsOrder | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const getLinkedInvoice = (orderId: string) =>
+    invoices.find((inv) => inv.orderId === orderId) ?? null;
+
+  const openInvoiceForOrder = (order: CmsOrder) => {
+    setInvoiceForOrder(order);
+    setInvoiceEditorOpen(true);
+  };
 
   const openCreate = () => {
     setEditingOrder(null);
@@ -88,9 +102,12 @@ export function OrdersSection({ orders, products, onRefresh }: OrdersSectionProp
       {view.mode === "detail" && (
         <OrderDetailPanel
           order={view.order}
+          linkedInvoice={getLinkedInvoice(view.order.orderId)}
+          accounts={accounts}
           onBack={() => setView({ mode: "list" })}
           onEdit={openEdit}
           onDelete={setDeleteTarget}
+          onCreateInvoice={openInvoiceForOrder}
           onRefresh={onRefresh}
         />
       )}
@@ -111,6 +128,18 @@ export function OrdersSection({ orders, products, onRefresh }: OrdersSectionProp
         onConfirm={handleDelete}
         isSaving={isSaving}
         error={error}
+      />
+
+      {/* Invoice editor opened from order — pre-fills order data */}
+      <InvoiceEditor
+        open={invoiceEditorOpen}
+        editing={invoiceForOrder ? getLinkedInvoice(invoiceForOrder.orderId) : null}
+        orders={orders}
+        products={products}
+        paymentMethods={paymentMethods}
+        prefillOrderId={invoiceForOrder?.orderId}
+        onClose={() => { setInvoiceEditorOpen(false); setInvoiceForOrder(null); }}
+        onRefresh={onRefresh}
       />
     </div>
   );

@@ -7,7 +7,7 @@ export type GraphqlResponse<T> = {
   errors?: Array<{ message: string }>;
 };
 
-async function getAccessToken() {
+export async function getAccessToken() {
   if (!nhost) {
     throw new Error(nhostConfigError ?? "Nhost is not configured.");
   }

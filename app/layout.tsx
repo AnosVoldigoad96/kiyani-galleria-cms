@@ -26,9 +26,9 @@ const geistMono = Geist_Mono({
 
 
 export const metadata: Metadata = {
-  title: "Kiyani Studio",
+  title: "Kiyani Galleria — CMS",
   description:
-    "CMS and storefront for handcrafted gifts, bokeh decor, knitted pieces, and crochet products.",
+    "Manage products, orders, and content for Kiyani Galleria — handmade gifts in paper, paint, wood, yarn, balloon & more from Arifwala, Pakistan.",
 };
 
 export default function RootLayout({

@@ -1,19 +1,26 @@
 "use client";
 
-import { ArrowLeft, Pencil, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, CheckCircle, Download, FileText, Pencil, Trash2, Truck } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { StatusBadge, sectionTone, surfaceClassName } from "@/components/cms/cms-shared";
 import { OrderStatusTimeline } from "@/components/cms/orders/order-status-timeline";
+import { ManualJournalEditor } from "@/components/cms/accounting/manual-journal-editor";
 import { updateOrder, type OrderPaymentStatus, type OrderFulfillmentStatus } from "@/components/cms/orders/orders-api";
-import type { CmsOrder } from "@/lib/cms-data";
+import { approveFullPayment } from "@/components/cms/accounting/invoice-api";
+import { nhost } from "@/lib/nhost";
+import type { CmsInvoice, CmsLedgerAccount, CmsOrder } from "@/lib/cms-data";
 
 type OrderDetailPanelProps = {
   order: CmsOrder;
+  linkedInvoice?: CmsInvoice | null;
+  accounts?: CmsLedgerAccount[];
   onBack: () => void;
   onEdit: (order: CmsOrder) => void;
   onDelete: (order: CmsOrder) => void;
+  onCreateInvoice?: (order: CmsOrder) => void;
   onRefresh?: () => void;
 };
 
@@ -21,7 +28,50 @@ function money(value: number) {
   return `PKR ${Math.max(0, value).toLocaleString()}`;
 }
 
-export function OrderDetailPanel({ order, onBack, onEdit, onDelete, onRefresh }: OrderDetailPanelProps) {
+export function OrderDetailPanel({ order, linkedInvoice, accounts = [], onBack, onEdit, onDelete, onCreateInvoice, onRefresh }: OrderDetailPanelProps) {
+  const [payingInvoice, setPayingInvoice] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [journalEditorOpen, setJournalEditorOpen] = useState(false);
+
+  const handleApproveInvoicePayment = async () => {
+    if (!linkedInvoice || linkedInvoice.statusCode === "paid") return;
+    setPayingInvoice(true);
+    try {
+      await approveFullPayment(linkedInvoice.id, linkedInvoice.totalPkrValue);
+      toast.success("Payment approved.");
+      onRefresh?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to approve payment.");
+    } finally {
+      setPayingInvoice(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!linkedInvoice || !nhost) return;
+    setDownloadingPdf(true);
+    try {
+      const refreshed = await nhost.refreshSession(60).catch(() => null);
+      const session = refreshed ?? nhost.getUserSession();
+      const token = session?.accessToken;
+      if (!token) throw new Error("Sign in required.");
+      const res = await fetch("/api/invoices/pdf", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ invoiceId: linkedInvoice.id }),
+      });
+      if (!res.ok) throw new Error("PDF generation failed.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `${linkedInvoice.invoiceNo}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "PDF export failed.");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
   const handleQuickStatus = async (field: "payment" | "fulfillment", value: string) => {
     try {
       const payload: Record<string, unknown> = {
@@ -61,8 +111,9 @@ export function OrderDetailPanel({ order, onBack, onEdit, onDelete, onRefresh }:
         </button>
       </div>
 
-      <div className={surfaceClassName("p-6")}>
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className={surfaceClassName("p-4 sm:p-6")}>
+        {/* Order header */}
+        <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-foreground">{order.orderNo}</h2>
             <p className="mt-1 text-2xl font-semibold text-foreground">{order.totalPkr}</p>
@@ -71,16 +122,46 @@ export function OrderDetailPanel({ order, onBack, onEdit, onDelete, onRefresh }:
               <StatusBadge tone={sectionTone(order.fulfillment)}>{order.fulfillment}</StatusBadge>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => onEdit(order)}>
-              <Pencil className="mr-1.5 size-3.5" />
-              Edit
+          <div className="flex gap-1.5 shrink-0">
+            <Button variant="outline" size="icon-xs" onClick={() => onEdit(order)} title="Edit">
+              <Pencil className="size-3.5" />
             </Button>
-            <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10" onClick={() => onDelete(order)}>
-              <Trash2 className="mr-1.5 size-3.5" />
-              Delete
+            <Button variant="outline" size="icon-xs" className="text-destructive hover:bg-destructive/10" onClick={() => onDelete(order)} title="Delete">
+              <Trash2 className="size-3.5" />
             </Button>
           </div>
+        </div>
+
+        {/* Invoice actions — full width row below */}
+        <div className="mt-4 pt-4 border-t border-border flex flex-wrap items-center gap-2">
+          {linkedInvoice ? (
+            <>
+              <div className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs">
+                <FileText className="size-3.5 text-primary shrink-0" />
+                <span className="font-medium text-foreground">{linkedInvoice.invoiceNo}</span>
+                <StatusBadge tone={sectionTone(linkedInvoice.status)}>{linkedInvoice.status}</StatusBadge>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setJournalEditorOpen(true)} title="Record Expense" className="text-blue-600 hover:bg-blue-50">
+                <Truck className="mr-1.5 size-3.5" />
+                <span className="hidden sm:inline">Expenses</span>
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleDownloadPdf} disabled={downloadingPdf} title="Download PDF">
+                <Download className="mr-1.5 size-3.5" />
+                PDF
+              </Button>
+              {linkedInvoice.statusCode !== "paid" && linkedInvoice.statusCode !== "void" && (
+                <Button variant="outline" size="sm" onClick={handleApproveInvoicePayment} disabled={payingInvoice} className="text-emerald-600 hover:bg-emerald-50" title="Approve Payment">
+                  <CheckCircle className="mr-1.5 size-3.5" />
+                  <span className="hidden sm:inline">Approve</span> Pay
+                </Button>
+              )}
+            </>
+          ) : onCreateInvoice ? (
+            <Button variant="outline" size="sm" onClick={() => onCreateInvoice(order)}>
+              <FileText className="mr-1.5 size-3.5" />
+              Create Invoice
+            </Button>
+          ) : null}
         </div>
 
         <div className="mt-6">
@@ -171,33 +252,31 @@ export function OrderDetailPanel({ order, onBack, onEdit, onDelete, onRefresh }:
         <div className="border-b border-border px-4 py-4 sm:px-6">
           <h3 className="text-sm font-semibold text-foreground">Line Items</h3>
         </div>
-        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/50">
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-6">Product</th>
-              <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">SKU</th>
-              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-6">Qty</th>
-              <th className="hidden sm:table-cell px-6 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Unit Price</th>
-              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-6">Total</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Product</th>
+              <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">SKU</th>
+              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Qty</th>
+              <th className="hidden sm:table-cell px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Price</th>
+              <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Total</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {order.items.map((item) => (
               <tr key={item.id}>
-                <td className="px-4 py-3 sm:px-6">
+                <td className="px-4 py-3">
                   <p className="font-medium text-foreground">{item.productName}</p>
-                  <p className="text-xs text-muted-foreground sm:hidden">{item.sku}</p>
+                  <p className="text-xs text-muted-foreground sm:hidden">{item.sku} &middot; {money(item.unitPricePkr)}</p>
                 </td>
-                <td className="hidden sm:table-cell px-6 py-3 text-muted-foreground">{item.sku}</td>
-                <td className="px-4 py-3 text-right tabular-nums sm:px-6">{item.quantity}</td>
-                <td className="hidden sm:table-cell px-6 py-3 text-right tabular-nums">{money(item.unitPricePkr)}</td>
-                <td className="px-4 py-3 text-right font-medium tabular-nums sm:px-6">{money(item.quantity * item.unitPricePkr)}</td>
+                <td className="hidden sm:table-cell px-4 py-3 text-muted-foreground">{item.sku}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{item.quantity}</td>
+                <td className="hidden sm:table-cell px-4 py-3 text-right tabular-nums">{money(item.unitPricePkr)}</td>
+                <td className="px-4 py-3 text-right font-medium tabular-nums">{money(item.quantity * item.unitPricePkr)}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        </div>
         <div className="border-t border-border bg-muted/30 px-4 py-4 sm:px-6">
           <div className="w-full space-y-1.5 text-sm sm:ml-auto sm:w-64">
             <div className="flex justify-between">
@@ -229,6 +308,16 @@ export function OrderDetailPanel({ order, onBack, onEdit, onDelete, onRefresh }:
           <h3 className="text-sm font-semibold text-foreground">Notes</h3>
           <p className="mt-2 text-sm text-muted-foreground whitespace-pre-wrap">{order.notes}</p>
         </div>
+      )}
+
+      {linkedInvoice && (
+        <ManualJournalEditor
+          open={journalEditorOpen}
+          accounts={accounts}
+          invoices={[linkedInvoice]}
+          onClose={() => setJournalEditorOpen(false)}
+          onRefresh={onRefresh}
+        />
       )}
     </div>
   );

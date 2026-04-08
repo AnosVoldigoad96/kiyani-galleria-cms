@@ -1,13 +1,21 @@
 export type RecordStatus = "draft" | "live" | "archived";
 export type SubcategoryStatus = "draft" | "live";
 
+export type SeoFormFields = {
+  metaTitle: string;
+  metaDescription: string;
+  keywords: string;
+  ogTitle: string;
+  ogDescription: string;
+};
+
 export type CategoryFormState = {
   name: string;
   slug: string;
   description: string;
   sortOrder: string;
   isVisible: boolean;
-};
+} & SeoFormFields;
 
 export type SubcategoryFormState = {
   name: string;
@@ -16,7 +24,7 @@ export type SubcategoryFormState = {
   sortOrder: string;
   status: SubcategoryStatus;
   categoryId: string;
-};
+} & SeoFormFields;
 
 export type ProductFormState = {
   sku: string;
@@ -41,4 +49,4 @@ export type ProductFormState = {
   imageUrl: string;
   imageAlt: string;
   featuresText: string;
-};
+} & SeoFormFields;

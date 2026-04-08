@@ -5,7 +5,7 @@ import { Toaster } from "sonner";
 export function SonnerProvider() {
   return (
     <Toaster
-      position="top-right"
+      position="bottom-right"
       richColors
       toastOptions={{
         className:

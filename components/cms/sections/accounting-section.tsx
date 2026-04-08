@@ -9,6 +9,7 @@ import { InvoiceEditor } from "@/components/cms/accounting/invoice-editor";
 import { JournalEntriesTab } from "@/components/cms/accounting/journal-entries-tab";
 import { ChartOfAccountsTab } from "@/components/cms/accounting/chart-of-accounts-tab";
 import { ReportsTab } from "@/components/cms/accounting/reports-tab";
+import { PaymentMethodsTab } from "@/components/cms/accounting/payment-methods-tab";
 import { deleteInvoice } from "@/components/cms/accounting/invoice-api";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -19,9 +20,11 @@ import type {
   CmsJournalEntry,
   CmsLedgerAccount,
   CmsOrder,
+  CmsPaymentMethod,
+  CmsProduct,
 } from "@/lib/cms-data";
 
-const TABS = ["Invoices", "Journals", "Accounts", "Reports"] as const;
+const TABS = ["Invoices", "Journals", "Accounts", "Payment Methods", "Reports"] as const;
 type Tab = (typeof TABS)[number];
 
 export function AccountingSection({
@@ -30,6 +33,8 @@ export function AccountingSection({
   journalEntries,
   ledgerAccounts,
   orders,
+  products,
+  paymentMethods,
   onRefresh,
 }: {
   accountingStats: CmsAccountingStat[];
@@ -37,6 +42,8 @@ export function AccountingSection({
   journalEntries: CmsJournalEntry[];
   ledgerAccounts: CmsLedgerAccount[];
   orders: CmsOrder[];
+  products: CmsProduct[];
+  paymentMethods: CmsPaymentMethod[];
   onRefresh?: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("Invoices");
@@ -100,13 +107,16 @@ export function AccountingSection({
       </div>
 
       {tab === "Invoices" && (
-        <InvoicesTab invoices={invoices} onEdit={openEdit} onDelete={setDeleteTarget} onCreate={openCreate} />
+        <InvoicesTab invoices={invoices} accounts={ledgerAccounts} onEdit={openEdit} onDelete={setDeleteTarget} onCreate={openCreate} onRefresh={onRefresh} />
       )}
       {tab === "Journals" && (
-        <JournalEntriesTab entries={journalEntries} />
+        <JournalEntriesTab entries={journalEntries} accounts={ledgerAccounts} invoices={invoices} onRefresh={onRefresh} />
       )}
       {tab === "Accounts" && (
         <ChartOfAccountsTab accounts={ledgerAccounts} />
+      )}
+      {tab === "Payment Methods" && (
+        <PaymentMethodsTab methods={paymentMethods} onRefresh={onRefresh} />
       )}
       {tab === "Reports" && (
         <ReportsTab ledgerAccounts={ledgerAccounts} invoices={invoices} />
@@ -116,6 +126,8 @@ export function AccountingSection({
         open={editorOpen}
         editing={editing}
         orders={orders}
+        products={products}
+        paymentMethods={paymentMethods}
         onClose={() => { setEditorOpen(false); setEditing(null); }}
         onRefresh={onRefresh}
       />

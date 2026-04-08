@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { CmsModal } from "@/components/cms/cms-modal";
 import { Button } from "@/components/ui/button";
 import type { CmsCategory, CmsProduct, CmsSubcategory } from "@/lib/cms-data";
 
+import { Trash2, ImagePlus } from "lucide-react";
+import { AiDescriptionButton } from "./ai-description-button";
+import { deleteProductImage, extractFileId, generateDescription, generateSeo } from "./products-api";
+import { SeoFieldsSection } from "./seo-fields-section";
 import type { ProductFormState, RecordStatus } from "./types";
-import { fromRecordStatus, productToFormState, slugify } from "./utils";
+import { fromRecordStatus, parseFeatures, productToFormState, slugify } from "./utils";
 
 type ProductFormModalProps = {
   open: boolean;
@@ -16,6 +20,7 @@ type ProductFormModalProps = {
   categories: CmsCategory[];
   subcategories: CmsSubcategory[];
   fallbackCategoryId?: string;
+  defaultSku?: string;
   onClose: () => void;
   onSave: (state: ProductFormState, imageFile: File | null) => Promise<void>;
   isSaving: boolean;
@@ -29,6 +34,7 @@ export function ProductFormModal({
   categories,
   subcategories,
   fallbackCategoryId,
+  defaultSku,
   onClose,
   onSave,
   isSaving,
@@ -39,12 +45,84 @@ export function ProductFormModal({
   );
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isGeneratingSeo, setIsGeneratingSeo] = useState(false);
+  const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
+  const [isDeletingImage, setIsDeletingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const slugTouched = useRef(false);
+
+  const handleDeleteImage = async () => {
+    if (!formState.imageUrl) return;
+    const fileId = extractFileId(formState.imageUrl);
+    setIsDeletingImage(true);
+    try {
+      if (fileId) {
+        await deleteProductImage(fileId);
+      }
+      setFormState((prev) => ({ ...prev, imageUrl: "", imageAlt: "" }));
+      setImageFile(null);
+      setPreviewUrl(null);
+    } catch (err) {
+      console.error("Image delete failed:", err);
+    } finally {
+      setIsDeletingImage(false);
+    }
+  };
+
+  const handleGenerateDescription = async () => {
+    if (!formState.name.trim()) return;
+    setIsGeneratingDesc(true);
+    try {
+      const desc = await generateDescription({
+        type: "product",
+        name: formState.name,
+        category: categories.find((c) => c.id === formState.categoryId)?.name,
+      });
+      setFormState((prev) => ({ ...prev, description: desc }));
+    } catch (err) {
+      console.error("Description generation failed:", err);
+    } finally {
+      setIsGeneratingDesc(false);
+    }
+  };
+
+  const handleGenerateSeo = async () => {
+    if (!formState.name.trim()) return;
+    setIsGeneratingSeo(true);
+    try {
+      const result = await generateSeo({
+        type: "product",
+        name: formState.name,
+        description: formState.description || undefined,
+        category: categories.find((c) => c.id === formState.categoryId)?.name,
+        price: Number(formState.pricePkr) || undefined,
+        features: parseFeatures(formState.featuresText),
+      });
+      setFormState((prev) => ({
+        ...prev,
+        metaTitle: result.meta_title,
+        metaDescription: result.meta_description,
+        keywords: result.keywords,
+        ogTitle: result.og_title,
+        ogDescription: result.og_description,
+      }));
+    } catch (err) {
+      console.error("SEO generation failed:", err);
+    } finally {
+      setIsGeneratingSeo(false);
+    }
+  };
 
   useEffect(() => {
     if (open) {
-      setFormState(productToFormState(product, fallbackCategoryId));
+      const initial = productToFormState(product, fallbackCategoryId);
+      if (!product && defaultSku) {
+        initial.sku = defaultSku;
+      }
+      setFormState(initial);
       setImageFile(null);
       setPreviewUrl(null);
+      slugTouched.current = Boolean(product);
     }
   }, [open, product, fallbackCategoryId]);
 
@@ -71,9 +149,12 @@ export function ProductFormModal({
     field: keyof ProductFormState,
     value: string | boolean,
   ) => {
+    if (field === "slug") {
+      slugTouched.current = true;
+    }
     setFormState((current) => {
       const next = { ...current, [field]: value };
-      if (field === "name" && !current.slug) {
+      if (field === "name" && !slugTouched.current) {
         next.slug = slugify(String(value));
       }
       return next;
@@ -119,7 +200,7 @@ export function ProductFormModal({
             value={formState.name}
             onChange={(event) => handleChange("name", event.target.value)}
             className={inputClass}
-            placeholder="Spring crochet bouquet"
+            placeholder="Hand-painted Dupatta Set"
           />
         </label>
         <label className="block">
@@ -140,7 +221,7 @@ export function ProductFormModal({
             value={formState.slug}
             onChange={(event) => handleChange("slug", event.target.value)}
             className={inputClass}
-            placeholder="spring-crochet-bouquet"
+            placeholder="hand-painted-dupatta-set"
           />
         </label>
         <label className="block">
@@ -159,15 +240,18 @@ export function ProductFormModal({
         </label>
       </div>
 
-      <label className="block">
-        <span className={labelClass}>Description</span>
+      <div className="block">
+        <span className="flex items-center gap-2">
+          <span className={labelClass}>Description</span>
+          <AiDescriptionButton onClick={handleGenerateDescription} isGenerating={isGeneratingDesc} />
+        </span>
         <textarea
           value={formState.description}
           onChange={(event) => handleChange("description", event.target.value)}
           className={`${inputClass} min-h-[80px]`}
           placeholder="Capture the product story and materials."
         />
-      </label>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-4">
         <label className="block">
@@ -307,53 +391,84 @@ export function ProductFormModal({
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-[1.2fr_0.8fr]">
-        <label className="block">
-          <span className={labelClass}>Image alt text</span>
-          <input
-            value={formState.imageAlt}
-            onChange={(event) => handleChange("imageAlt", event.target.value)}
-            className={inputClass}
-            placeholder="Bouquet on pastel background"
-          />
-        </label>
-        <label className="block">
-          <span className={labelClass}>Upload image</span>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(event) => setImageFile(event.target.files?.[0] ?? null)}
-            className={`${inputClass} !py-1`}
-          />
-        </label>
+      <div>
+        <span className={labelClass}>Product Image</span>
+        <div className="mt-2 grid gap-4 sm:grid-cols-[0.7fr_1.3fr]">
+          <div className="relative rounded-xl border border-[var(--border)]/50 bg-white p-2 text-center text-xs text-[var(--muted-foreground)]">
+            {previewUrl ? (
+              <img src={previewUrl} alt="Preview" className="h-36 w-full rounded-lg object-cover" />
+            ) : formState.imageUrl ? (
+              <>
+                <img
+                  src={formState.imageUrl}
+                  alt={formState.imageAlt || "Product image"}
+                  className="h-36 w-full rounded-lg object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={handleDeleteImage}
+                  disabled={isDeletingImage}
+                  className="absolute top-3 right-3 flex items-center justify-center size-7 rounded-full bg-red-500 text-white shadow-md hover:bg-red-600 transition-colors disabled:opacity-50"
+                  title="Remove image"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-36 w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] hover:border-[var(--primary)] hover:bg-[var(--primary)]/5 transition-colors cursor-pointer"
+              >
+                <ImagePlus size={24} className="text-[var(--muted-foreground)]" />
+                <span>Click to upload</span>
+              </button>
+            )}
+          </div>
+          <div className="space-y-3">
+            <label className="block">
+              <span className={labelClass}>Image alt text</span>
+              <input
+                value={formState.imageAlt}
+                onChange={(event) => handleChange("imageAlt", event.target.value)}
+                className={inputClass}
+                placeholder="Painted dupatta on wooden surface"
+              />
+            </label>
+            <label className="block">
+              <span className={labelClass}>{formState.imageUrl ? "Replace image" : "Upload image"}</span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(event) => setImageFile(event.target.files?.[0] ?? null)}
+                className={`${inputClass} !py-1`}
+              />
+            </label>
+          </div>
+        </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-[0.7fr_1.3fr]">
-        <div className="rounded-xl border border-[var(--border)]/50 bg-white p-2 text-center text-xs text-[var(--muted-foreground)]">
-          {previewUrl ? (
-            <img src={previewUrl} alt="Preview" className="h-32 w-full rounded-lg object-cover" />
-          ) : formState.imageUrl ? (
-            <img
-              src={formState.imageUrl}
-              alt={formState.imageAlt || "Product image"}
-              className="h-32 w-full rounded-lg object-cover"
-            />
-          ) : (
-            <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-[var(--border)]">
-              No image uploaded
-            </div>
-          )}
-        </div>
-        <label className="block">
-          <span className={labelClass}>Feature bullets (one per line)</span>
-          <textarea
-            value={formState.featuresText}
-            onChange={(event) => handleChange("featuresText", event.target.value)}
-            className={`${inputClass} min-h-[145px]`}
-            placeholder="Soft crochet finish&#10;Custom color palette&#10;Gift ready packaging"
-          />
-        </label>
-      </div>
+      <label className="block">
+        <span className={labelClass}>Feature bullets (one per line)</span>
+        <textarea
+          value={formState.featuresText}
+          onChange={(event) => handleChange("featuresText", event.target.value)}
+          className={`${inputClass} min-h-[120px]`}
+          placeholder="Hand-painted floral design&#10;Premium cotton fabric&#10;Gift-ready packaging"
+        />
+      </label>
+
+      <SeoFieldsSection
+        metaTitle={formState.metaTitle}
+        metaDescription={formState.metaDescription}
+        keywords={formState.keywords}
+        ogTitle={formState.ogTitle}
+        ogDescription={formState.ogDescription}
+        onChange={(field, value) => handleChange(field as keyof ProductFormState, value)}
+        onGenerate={handleGenerateSeo}
+        isGenerating={isGeneratingSeo}
+      />
 
       {error ? <p className="text-sm text-rose-600">{error}</p> : null}
     </CmsModal>

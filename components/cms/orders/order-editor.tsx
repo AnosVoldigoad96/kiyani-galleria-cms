@@ -27,6 +27,7 @@ type OrderDraftItem = {
   sku: string;
   quantity: number;
   unitPricePkr: number;
+  ourCostPkr: number;
 };
 
 type OrderDraft = {
@@ -53,11 +54,8 @@ function generateOrderNo() {
   return `ORD-${n.getFullYear()}${String(n.getMonth() + 1).padStart(2, "0")}${String(n.getDate()).padStart(2, "0")}-${String(n.getHours()).padStart(2, "0")}${String(n.getMinutes()).padStart(2, "0")}${String(n.getSeconds()).padStart(2, "0")}`;
 }
 
-function createEmptyItem(products: CmsProduct[]): OrderDraftItem {
-  const p = products[0];
-  return p
-    ? { key: crypto.randomUUID(), productId: p.productId, productName: p.name, sku: p.id, quantity: 1, unitPricePkr: p.priceValue }
-    : { key: crypto.randomUUID(), productId: "", productName: "", sku: "", quantity: 1, unitPricePkr: 0 };
+function createEmptyItem(): OrderDraftItem {
+  return { key: crypto.randomUUID(), productId: "", productName: "", sku: "", quantity: 1, unitPricePkr: 0, ourCostPkr: 0 };
 }
 
 export function buildOrderDraft(order: CmsOrder | null, products: CmsProduct[]): OrderDraft {
@@ -65,8 +63,8 @@ export function buildOrderDraft(order: CmsOrder | null, products: CmsProduct[]):
     return {
       orderNo: generateOrderNo(), customerName: "", customerEmail: "", customerPhone: "",
       city: "", address: "", paymentStatus: "pending", fulfillmentStatus: "processing",
-      discountPkr: 0, shippingPkr: 0, notes: "", syncAccounting: true,
-      items: [createEmptyItem(products)],
+      discountPkr: 0, shippingPkr: 0, notes: "", syncAccounting: false,
+      items: [createEmptyItem()],
     };
   }
   return {
@@ -78,24 +76,38 @@ export function buildOrderDraft(order: CmsOrder | null, products: CmsProduct[]):
     fulfillmentStatus: order.fulfillmentStatus, discountPkr: order.discountPkr,
     shippingPkr: order.shippingPkr, notes: order.notes, syncAccounting: true,
     items: order.items.length
-      ? order.items.map((it) => ({ key: it.id || crypto.randomUUID(), productId: it.productId ?? "", productName: it.productName, sku: it.sku === "N/A" ? "" : it.sku, quantity: it.quantity, unitPricePkr: it.unitPricePkr }))
-      : [createEmptyItem(products)],
+      ? order.items.map((it) => {
+          const product = products.find((p) => p.productId === it.productId);
+          return { key: it.id || crypto.randomUUID(), productId: it.productId ?? "", productName: it.productName, sku: it.sku === "N/A" ? "" : it.sku, quantity: it.quantity, unitPricePkr: it.unitPricePkr, ourCostPkr: product?.ourPriceValue ?? 0 };
+        })
+      : [createEmptyItem()],
   };
 }
+
+export type RequestPrefill = {
+  orderNo: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  notes: string;
+  budgetPkr: number;
+};
 
 type OrderEditorProps = {
   open: boolean;
   editingOrder: CmsOrder | null;
   products: CmsProduct[];
+  prefillFromRequest?: RequestPrefill | null;
   onClose: () => void;
   onRefresh?: () => void;
 };
 
 const STEPS = ["Customer", "Items", "Review"] as const;
 
-export function OrderEditor({ open, editingOrder, products, onClose, onRefresh }: OrderEditorProps) {
+export function OrderEditor({ open, editingOrder, products, prefillFromRequest, onClose, onRefresh }: OrderEditorProps) {
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<OrderDraft>(() => buildOrderDraft(editingOrder, products));
+  const [appliedPrefill, setAppliedPrefill] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -105,9 +117,29 @@ export function OrderEditor({ open, editingOrder, products, onClose, onRefresh }
     setError(null);
   };
 
-  // Reset when open changes
-  if (open && step === 0 && draft.orderNo !== buildOrderDraft(editingOrder, products).orderNo && !editingOrder) {
-    resetAndOpen(editingOrder);
+  // Reset when open changes — but skip if we have a request prefill pending
+  if (open && step === 0 && !editingOrder && !prefillFromRequest && draft.orderNo !== buildOrderDraft(null, products).orderNo) {
+    resetAndOpen(null);
+  }
+
+  // Apply request prefill — overrides the fresh draft
+  if (open && prefillFromRequest && prefillFromRequest.orderNo !== appliedPrefill && !editingOrder) {
+    setAppliedPrefill(prefillFromRequest.orderNo);
+    const fresh = buildOrderDraft(null, products);
+    setDraft({
+      ...fresh,
+      orderNo: prefillFromRequest.orderNo,
+      customerName: prefillFromRequest.customerName || "",
+      customerEmail: prefillFromRequest.customerEmail || "",
+      customerPhone: prefillFromRequest.customerPhone || "",
+      notes: prefillFromRequest.notes || "",
+      syncAccounting: false,
+      items: [createEmptyItem()],
+    });
+    setStep(0);
+  }
+  if (!open && appliedPrefill) {
+    setAppliedPrefill(null);
   }
 
   const subtotal = draft.items.reduce((s, it) => s + it.quantity * it.unitPricePkr, 0);
@@ -121,7 +153,7 @@ export function OrderEditor({ open, editingOrder, products, onClose, onRefresh }
     setDraft((c) => ({
       ...c,
       items: c.items.map((it, i) =>
-        i !== idx ? it : { ...it, productId, productName: p?.name ?? it.productName, sku: p?.id ?? it.sku, unitPricePkr: p?.priceValue ?? it.unitPricePkr },
+        i !== idx ? it : { ...it, productId, productName: p?.name ?? it.productName, sku: p?.id ?? it.sku, unitPricePkr: p?.priceValue ?? it.unitPricePkr, ourCostPkr: p?.ourPriceValue ?? it.ourCostPkr },
       ),
     }));
   };
@@ -225,63 +257,62 @@ export function OrderEditor({ open, editingOrder, products, onClose, onRefresh }
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-foreground">Line Items</p>
-            <Button type="button" variant="outline" size="sm" onClick={() => setDraft((c) => ({ ...c, items: [...c.items, createEmptyItem(products)] }))}>
+            <Button type="button" variant="outline" size="sm" onClick={() => setDraft((c) => ({ ...c, items: [...c.items, createEmptyItem()] }))}>
               <Plus className="mr-1 size-3.5" /> Add
             </Button>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-border">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/50">
-                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Product</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">SKU</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground w-20">Qty</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground w-28">Price</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground w-28">Total</th>
-                  <th className="px-3 py-2 w-10" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {draft.items.map((item, idx) => (
-                  <tr key={item.key}>
-                    <td className="px-3 py-2">
-                      <select
-                        value={item.productId}
-                        onChange={(e) => handleProductPick(idx, e.target.value)}
-                        className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-                      >
-                        <option value="">Manual item</option>
-                        {products.map((p) => (
-                          <option key={p.productId} value={p.productId}>{p.name}</option>
-                        ))}
-                      </select>
-                      <input
-                        value={item.productName}
-                        onChange={(e) => setItemField(idx, "productName", e.target.value)}
-                        className="mt-1 h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
-                        placeholder="Description"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input value={item.sku} onChange={(e) => setItemField(idx, "sku", e.target.value)} className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20" placeholder="SKU" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input type="number" min={1} value={item.quantity} onChange={(e) => setItemField(idx, "quantity", Number(e.target.value || 1))} className="h-8 w-full rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums outline-none focus:border-ring focus:ring-2 focus:ring-ring/20" />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input type="number" min={0} step="0.01" value={item.unitPricePkr} onChange={(e) => setItemField(idx, "unitPricePkr", Number(e.target.value || 0))} className="h-8 w-full rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums outline-none focus:border-ring focus:ring-2 focus:ring-ring/20" />
-                    </td>
-                    <td className="px-3 py-2 text-right text-sm font-medium tabular-nums">{money(item.quantity * item.unitPricePkr)}</td>
-                    <td className="px-3 py-2">
-                      <button type="button" onClick={() => setDraft((c) => ({ ...c, items: c.items.length > 1 ? c.items.filter((_, i) => i !== idx) : c.items }))} className="text-muted-foreground hover:text-destructive transition-colors">
-                        <Trash2 className="size-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-3">
+            {draft.items.map((item, idx) => {
+              const inputCls = "h-8 w-full rounded-md border border-border bg-background px-2 text-sm tabular-nums outline-none focus:border-ring focus:ring-2 focus:ring-ring/20";
+              return (
+                <div key={item.key} className="rounded-lg border border-border p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={item.productId}
+                      onChange={(e) => handleProductPick(idx, e.target.value)}
+                      className={`${inputCls} flex-1 text-left`}
+                    >
+                      <option value="">Manual item</option>
+                      {products.map((p) => (
+                        <option key={p.productId} value={p.productId}>{p.name}</option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={() => setDraft((c) => ({ ...c, items: c.items.length > 1 ? c.items.filter((_, i) => i !== idx) : c.items }))} className="text-muted-foreground hover:text-destructive shrink-0">
+                      <Trash2 className="size-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-[10px] font-medium text-muted-foreground mb-1">Description</p>
+                      <input value={item.productName} onChange={(e) => setItemField(idx, "productName", e.target.value)} className={`${inputCls} text-left`} placeholder="Item name" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-medium text-muted-foreground mb-1">SKU</p>
+                      <input value={item.sku} onChange={(e) => setItemField(idx, "sku", e.target.value)} className={`${inputCls} text-left`} placeholder="SKU" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div>
+                      <p className="text-[10px] font-medium text-muted-foreground mb-1">Price</p>
+                      <input type="number" min={0} step="0.01" value={item.unitPricePkr} onChange={(e) => setItemField(idx, "unitPricePkr", Number(e.target.value || 0))} className={`${inputCls} text-right`} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-medium text-muted-foreground mb-1">Our Cost</p>
+                      <input type="number" min={0} step="0.01" value={item.ourCostPkr} onChange={(e) => setItemField(idx, "ourCostPkr", Number(e.target.value || 0))} className={`${inputCls} text-right`} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-medium text-muted-foreground mb-1">Qty</p>
+                      <input type="number" min={1} value={item.quantity} onChange={(e) => setItemField(idx, "quantity", Number(e.target.value || 1))} className={`${inputCls} text-right`} />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-medium text-muted-foreground mb-1">Total</p>
+                      <div className="h-8 flex items-center justify-end text-sm font-semibold tabular-nums">{money(item.quantity * item.unitPricePkr)}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

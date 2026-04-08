@@ -26,14 +26,14 @@ export function LoginScreen({ redirectTo = "/cms" }: { redirectTo?: string }) {
       <div className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl items-center gap-8 lg:grid-cols-[1.05fr_0.95fr]">
         <section className="rounded-[2rem] border border-[var(--border)] bg-white p-8 shadow-[0_10px_30px_rgba(34,34,34,0.05)] sm:p-10">
           <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[var(--muted-foreground)]">
-            Kiyani Studio
+            Kiyani Galleria
           </p>
           <h1 className="mt-5 font-serif text-5xl leading-none sm:text-6xl">
             Sign in to the CMS.
           </h1>
           <p className="mt-5 max-w-xl text-base leading-8 text-[var(--muted-foreground)]">
-            Manage products, orders, requests, reviews, and brand settings from a
-            dedicated admin space built for the studio team.
+            Manage products, orders, requests, reviews, and brand settings from your
+            dedicated admin space.
           </p>
 
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
@@ -91,7 +91,7 @@ export function LoginScreen({ redirectTo = "/cms" }: { redirectTo?: string }) {
                   type="email"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  placeholder="admin@kiyani.studio"
+                  placeholder="admin@kiyanigalleria.com"
                   className="w-full bg-transparent text-sm outline-none placeholder:text-[var(--muted-foreground)]"
                   required
                 />

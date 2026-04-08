@@ -74,22 +74,9 @@ export function OrderDetailPanel({ order, linkedInvoice, accounts = [], onBack, 
   };
   const handleQuickStatus = async (field: "payment" | "fulfillment", value: string) => {
     try {
-      const payload: Record<string, unknown> = {
-        order_no: order.orderNo,
-        customer_name: order.customer.name,
-        customer_email: order.customer.email === "No email" ? null : order.customer.email,
-        customer_phone: order.customer.phone || null,
-        city: order.customer.city === "Unknown" ? null : order.customer.city,
-        address: order.customer.address || null,
-        payment_status: field === "payment" ? value : order.paymentStatus,
-        fulfillment_status: field === "fulfillment" ? value : order.fulfillmentStatus,
-        subtotal_pkr: order.subtotalPkr,
-        discount_pkr: order.discountPkr,
-        shipping_pkr: order.shippingPkr,
-        total_pkr: order.totalPkrValue,
-        notes: order.notes || null,
-        user_id: null,
-      };
+      const payload: Record<string, unknown> = field === "payment"
+        ? { payment_status: value }
+        : { fulfillment_status: value };
       await updateOrder(order.orderId, payload as any, [], false);
       toast.success(`Status updated to ${value}.`);
       onRefresh?.();

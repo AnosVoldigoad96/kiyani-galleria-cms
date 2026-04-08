@@ -177,7 +177,7 @@ export function OrderEditor({ open, editingOrder, products, prefillFromRequest, 
       payment_status: draft.paymentStatus, fulfillment_status: draft.fulfillmentStatus,
       subtotal_pkr: Number(subtotal.toFixed(2)), discount_pkr: Number(draft.discountPkr.toFixed(2)),
       shipping_pkr: Number(draft.shippingPkr.toFixed(2)), total_pkr: Number(total.toFixed(2)),
-      notes: draft.notes.trim() || null, user_id: null,
+      notes: draft.notes.trim() || null,
     };
 
     setIsSaving(true); setError(null);

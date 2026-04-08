@@ -275,11 +275,83 @@ export async function deleteProduct(id: string) {
   unwrap(response, "Product was not deleted.");
 }
 
+const MAX_IMAGE_DIMENSION = 1200;
+const IMAGE_QUALITY = 0.82;
+
+async function compressImage(file: File): Promise<File> {
+  // Skip non-image or already-small files
+  if (!file.type.startsWith("image/") || file.size < 100_000) {
+    return file;
+  }
+
+  return new Promise<File>((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+
+      let { width, height } = img;
+
+      // Only resize if larger than max dimension
+      if (width <= MAX_IMAGE_DIMENSION && height <= MAX_IMAGE_DIMENSION) {
+        // Still re-encode to WebP for smaller size
+        if (file.type === "image/webp" && file.size < 500_000) {
+          resolve(file);
+          return;
+        }
+      }
+
+      if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+        const ratio = Math.min(MAX_IMAGE_DIMENSION / width, MAX_IMAGE_DIMENSION / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+
+      if (!ctx) {
+        resolve(file);
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob || blob.size >= file.size) {
+            // Compression didn't help, use original
+            resolve(file);
+            return;
+          }
+
+          const ext = "webp";
+          const name = file.name.replace(/\.[^.]+$/, `.${ext}`);
+          resolve(new File([blob], name, { type: `image/${ext}` }));
+        },
+        "image/webp",
+        IMAGE_QUALITY,
+      );
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(file);
+    };
+
+    img.src = url;
+  });
+}
+
 export async function uploadProductImage(file: File) {
+  const compressed = await compressImage(file);
   const accessToken = await getAccessToken();
 
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("file", compressed);
 
   const response = await fetch("/api/upload-image", {
     method: "POST",

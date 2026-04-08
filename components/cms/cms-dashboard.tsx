@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useState } from "react";
+import { useCallback, useDeferredValue, useState } from "react";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
@@ -21,7 +21,16 @@ import { useCmsData } from "@/lib/cms-api";
 export function CmsDashboard() {
   const { logout, user } = useAuth();
   const { data, error, isLoading, refetch } = useCmsData();
-  const [activeSection, setActiveSection] = useState<SectionId>("dashboard");
+  const [activeSection, setActiveSection] = useState<SectionId>(() => {
+    if (typeof window === "undefined") return "dashboard";
+    const saved = window.localStorage.getItem("cms-active-section");
+    const valid = sections.some((s) => s.id === saved);
+    return valid ? (saved as SectionId) : "dashboard";
+  });
+  const changeSection = useCallback((section: SectionId) => {
+    setActiveSection(section);
+    window.localStorage.setItem("cms-active-section", section);
+  }, []);
   const [query, setQuery] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -193,7 +202,7 @@ export function CmsDashboard() {
           }}
           onClose={() => setSidebarOpen(false)}
           onToggleCollapse={handleToggleCollapse}
-          onSectionChange={setActiveSection}
+          onSectionChange={changeSection}
           onLogout={logout}
         />
 

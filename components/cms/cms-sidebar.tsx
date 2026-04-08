@@ -47,28 +47,28 @@ export function CmsSidebar({
       </button>
 
       <div className="flex h-14 items-center border-b border-border px-3">
-        {/* Collapsed: icon only */}
-        <div className={`transition-all duration-300 ${isCollapsed ? "lg:flex hidden" : "lg:hidden"} items-center justify-center w-full`}>
-          <div className="relative size-8">
-            <Image src="/icon.png" alt="KG" fill sizes="32px" className="object-contain" />
+        {/* Collapsed: icon only (desktop only) */}
+        {isCollapsed && (
+          <div className="hidden lg:flex items-center justify-center w-full">
+            <div className="relative size-8">
+              <Image src="/logo.png" alt="KG" fill sizes="32px" className="object-contain" />
+            </div>
           </div>
-        </div>
+        )}
         {/* Expanded: logo + brand name */}
-        <div className={`overflow-hidden transition-all duration-300 flex items-center gap-2 ${isCollapsed ? "lg:opacity-0 lg:w-0" : "lg:opacity-100"}`}>
+        <div className={`overflow-hidden transition-all duration-300 flex items-center gap-2 ${isCollapsed ? "lg:opacity-0 lg:w-0 hidden lg:flex" : ""}`}>
           <div className="relative h-8 w-8 shrink-0">
-            <Image src="/icon.png" alt="KG" fill sizes="32px" className="object-contain" />
+            <Image src="/logo.png" alt="KG" fill sizes="32px" className="object-contain" />
           </div>
           <span className="text-sm font-bold text-foreground whitespace-nowrap">Kiyani Galleria</span>
         </div>
-        {!isCollapsed && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="ml-auto rounded-md p-1 text-muted-foreground hover:bg-muted lg:hidden"
-          >
-            <LogOut className="size-4" />
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-auto rounded-md p-1 text-muted-foreground hover:bg-muted lg:hidden"
+        >
+          <LogOut className="size-4" />
+        </button>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-3" aria-label="CMS navigation">

@@ -1,83 +1,10 @@
 export const dynamic = "force-dynamic";
 
-type AuthUserResponse = {
-  id: string;
-};
-
-type ProfileRoleResponse = {
-  data?: {
-    profiles_by_pk: {
-      role: "admin" | "manager" | "customer" | null;
-    } | null;
-  };
-  errors?: Array<{ message: string }>;
-};
-
-function resolveGraphqlUrl() {
-  const explicit = process.env.NEXT_PUBLIC_NHOST_GRAPHQL_URL;
-  if (explicit) return explicit;
-  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
-  if (!subdomain || !region) throw new Error("Missing Nhost GraphQL configuration.");
-  return `https://${subdomain}.graphql.${region}.nhost.run/v1`;
-}
-
-function resolveAuthUrl() {
-  const explicit = process.env.NEXT_PUBLIC_NHOST_AUTH_URL;
-  if (explicit) return explicit.replace(/\/$/, "");
-  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
-  if (!subdomain || !region) throw new Error("Missing Nhost Auth configuration.");
-  return `https://${subdomain}.auth.${region}.nhost.run/v1`;
-}
-
-function resolveStorageUrl() {
-  const explicit = process.env.NEXT_PUBLIC_NHOST_STORAGE_URL;
-  if (explicit) return explicit.replace(/\/$/, "");
-  const subdomain = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
-  const region = process.env.NEXT_PUBLIC_NHOST_REGION;
-  if (!subdomain || !region) throw new Error("Missing Nhost Storage configuration.");
-  return `https://${subdomain}.storage.${region}.nhost.run/v1`;
-}
-
-async function requireStaffAccess(request: Request, adminSecret: string) {
-  const authorization = request.headers.get("authorization");
-  if (!authorization?.startsWith("Bearer ")) {
-    return Response.json({ error: "Missing bearer token." }, { status: 401 });
-  }
-
-  const authResponse = await fetch(`${resolveAuthUrl()}/user`, {
-    headers: { Authorization: authorization },
-  });
-  if (!authResponse.ok) {
-    return Response.json({ error: "Authentication failed." }, { status: 401 });
-  }
-
-  const user = (await authResponse.json()) as AuthUserResponse;
-  if (!user.id) {
-    return Response.json({ error: "User id not returned." }, { status: 401 });
-  }
-
-  const roleResponse = await fetch(resolveGraphqlUrl(), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-hasura-admin-secret": adminSecret,
-    },
-    body: JSON.stringify({
-      query: `query CurrentProfileRole($id: uuid!) { profiles_by_pk(id: $id) { role } }`,
-      variables: { id: user.id },
-    }),
-  });
-
-  const roleBody = (await roleResponse.json()) as ProfileRoleResponse;
-  const role = roleBody.data?.profiles_by_pk?.role ?? null;
-  if (role !== "admin" && role !== "manager") {
-    return Response.json({ error: "Admin access is required." }, { status: 403 });
-  }
-
-  return null;
-}
+import {
+  requireStaffAccess,
+  resolveGraphqlUrl,
+  resolveStorageUrl,
+} from "@/lib/staff-auth";
 
 export async function POST(request: Request) {
   const adminSecret = process.env.HASURA_ADMIN_SECRET;
@@ -97,7 +24,6 @@ export async function POST(request: Request) {
 
   const storageUrl = resolveStorageUrl();
 
-  // First, ensure the "public" bucket exists (Nhost creates it if we reference it)
   // Upload to the "public" bucket so files are accessible without auth
   const uploadForm = new FormData();
   uploadForm.append("file[]", file);

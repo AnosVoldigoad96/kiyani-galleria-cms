@@ -158,49 +158,53 @@ function currentIsoDate() {
 }
 
 async function replaceOrderItems(orderId: string, items: OrderItemPayload[]) {
-  const deleteResponse = await requestAdminGraphql<{
-    delete_order_items: { affected_rows: number };
-  }>(
-    `
-      mutation DeleteOrderItems($orderId: uuid!) {
-        delete_order_items(where: { order_id: { _eq: $orderId } }) {
-          affected_rows
+  const objects = items.map((item) => ({
+    order_id: orderId,
+    product_id: item.product_id,
+    product_name: item.product_name,
+    sku: item.sku,
+    quantity: item.quantity,
+    unit_price_pkr: toMoney(item.unit_price_pkr),
+    total_price_pkr: toMoney(item.total_price_pkr),
+  }));
+
+  if (objects.length) {
+    // Batch delete + insert in a single request
+    const response = await requestAdminGraphql<{
+      delete_order_items: { affected_rows: number };
+      insert_order_items: { affected_rows: number };
+    }>(
+      `
+        mutation ReplaceOrderItems($orderId: uuid!, $objects: [order_items_insert_input!]!) {
+          delete_order_items(where: { order_id: { _eq: $orderId } }) {
+            affected_rows
+          }
+          insert_order_items(objects: $objects) {
+            affected_rows
+          }
         }
-      }
-    `,
-    { orderId },
-  );
+      `,
+      { orderId, objects },
+    );
 
-  unwrap(deleteResponse, "Failed to clear order items.");
+    unwrap(response, "Failed to replace order items.");
+  } else {
+    // No items — just delete
+    const response = await requestAdminGraphql<{
+      delete_order_items: { affected_rows: number };
+    }>(
+      `
+        mutation DeleteOrderItems($orderId: uuid!) {
+          delete_order_items(where: { order_id: { _eq: $orderId } }) {
+            affected_rows
+          }
+        }
+      `,
+      { orderId },
+    );
 
-  if (!items.length) {
-    return;
+    unwrap(response, "Failed to clear order items.");
   }
-
-  const insertResponse = await requestAdminGraphql<{
-    insert_order_items: { affected_rows: number };
-  }>(
-    `
-      mutation InsertOrderItems($objects: [order_items_insert_input!]!) {
-        insert_order_items(objects: $objects) {
-          affected_rows
-        }
-      }
-    `,
-    {
-      objects: items.map((item) => ({
-        order_id: orderId,
-        product_id: item.product_id,
-        product_name: item.product_name,
-        sku: item.sku,
-        quantity: item.quantity,
-        unit_price_pkr: toMoney(item.unit_price_pkr),
-        total_price_pkr: toMoney(item.total_price_pkr),
-      })),
-    },
-  );
-
-  unwrap(insertResponse, "Failed to save order items.");
 }
 
 async function syncOrderAccounting(orderId: string, payload: OrderPayload, items: OrderItemPayload[]) {
@@ -269,13 +273,18 @@ async function syncOrderAccounting(orderId: string, payload: OrderPayload, items
   let invoiceId: string | null = existingInvoiceId ?? null;
 
   if (existingInvoiceId) {
+    // Batch: update invoice + delete old invoice lines in one request
     const updateInvoiceResponse = await requestAdminGraphql<{
       update_invoices_by_pk: { id: string } | null;
+      delete_invoice_lines: { affected_rows: number };
     }>(
       `
-        mutation UpdateOrderInvoice($id: uuid!, $set: invoices_set_input!) {
+        mutation UpdateInvoiceAndClearLines($id: uuid!, $set: invoices_set_input!) {
           update_invoices_by_pk(pk_columns: { id: $id }, _set: $set) {
             id
+          }
+          delete_invoice_lines(where: { invoice_id: { _eq: $id } }) {
+            affected_rows
           }
         }
       `,
@@ -312,48 +321,18 @@ async function syncOrderAccounting(orderId: string, payload: OrderPayload, items
   }
   const ensuredInvoiceId = invoiceId;
 
-  const deleteInvoiceLinesResponse = await requestAdminGraphql<{
-    delete_invoice_lines: { affected_rows: number };
-  }>(
-    `
-      mutation DeleteInvoiceLines($invoiceId: uuid!) {
-        delete_invoice_lines(where: { invoice_id: { _eq: $invoiceId } }) {
-          affected_rows
-        }
-      }
-    `,
-    { invoiceId: ensuredInvoiceId },
-  );
+  // Build invoice line objects
+  const invoiceLineObjects = items.map((item, index) => ({
+    invoice_id: ensuredInvoiceId,
+    product_id: item.product_id,
+    description: item.product_name,
+    quantity: toMoney(item.quantity),
+    unit_price_pkr: toMoney(item.unit_price_pkr),
+    line_total_pkr: toMoney(item.total_price_pkr),
+    sort_order: index,
+  }));
 
-  unwrap(deleteInvoiceLinesResponse, "Failed to clear invoice lines.");
-
-  if (items.length) {
-    const insertInvoiceLinesResponse = await requestAdminGraphql<{
-      insert_invoice_lines: { affected_rows: number };
-    }>(
-      `
-        mutation InsertInvoiceLines($objects: [invoice_lines_insert_input!]!) {
-          insert_invoice_lines(objects: $objects) {
-            affected_rows
-          }
-        }
-      `,
-      {
-        objects: items.map((item, index) => ({
-          invoice_id: ensuredInvoiceId,
-          product_id: item.product_id,
-          description: item.product_name,
-          quantity: toMoney(item.quantity),
-          unit_price_pkr: toMoney(item.unit_price_pkr),
-          line_total_pkr: toMoney(item.total_price_pkr),
-          sort_order: index,
-        })),
-      },
-    );
-
-    unwrap(insertInvoiceLinesResponse, "Failed to save invoice lines.");
-  }
-
+  // Prepare journal data
   const existingJournalId = context.journal_entries[0]?.id;
   const journalNo = buildJournalNo(payload.order_no);
   const journalStatus = payload.payment_status === "failed" ? "void" : "posted";
@@ -367,22 +346,76 @@ async function syncOrderAccounting(orderId: string, payload: OrderPayload, items
   };
 
   let journalId: string | null = existingJournalId ?? null;
-  if (existingJournalId) {
-    const updateJournalResponse = await requestAdminGraphql<{
-      update_journal_entries_by_pk: { id: string } | null;
-    }>(
-      `
-        mutation UpdateOrderJournal($id: uuid!, $set: journal_entries_set_input!) {
-          update_journal_entries_by_pk(pk_columns: { id: $id }, _set: $set) {
-            id
-          }
-        }
-      `,
-      { id: existingJournalId, set: journalSet },
-    );
 
-    unwrap(updateJournalResponse, "Failed to update linked journal.");
+  // Batch: insert invoice lines + journal upsert + delete journal lines in one request
+  if (existingJournalId) {
+    if (invoiceLineObjects.length) {
+      const batchResponse = await requestAdminGraphql<{
+        insert_invoice_lines: { affected_rows: number };
+        update_journal_entries_by_pk: { id: string } | null;
+        delete_journal_lines: { affected_rows: number };
+      }>(
+        `
+          mutation BatchInvoiceLinesAndJournal(
+            $invoiceLines: [invoice_lines_insert_input!]!,
+            $journalId: uuid!,
+            $journalSet: journal_entries_set_input!
+          ) {
+            insert_invoice_lines(objects: $invoiceLines) {
+              affected_rows
+            }
+            update_journal_entries_by_pk(pk_columns: { id: $journalId }, _set: $journalSet) {
+              id
+            }
+            delete_journal_lines(where: { journal_entry_id: { _eq: $journalId } }) {
+              affected_rows
+            }
+          }
+        `,
+        { invoiceLines: invoiceLineObjects, journalId: existingJournalId, journalSet },
+      );
+
+      unwrap(batchResponse, "Failed to sync invoice lines and journal.");
+    } else {
+      // No invoice lines to insert, just update journal + delete journal lines
+      const batchResponse = await requestAdminGraphql<{
+        update_journal_entries_by_pk: { id: string } | null;
+        delete_journal_lines: { affected_rows: number };
+      }>(
+        `
+          mutation UpdateJournalAndClearLines($journalId: uuid!, $journalSet: journal_entries_set_input!) {
+            update_journal_entries_by_pk(pk_columns: { id: $journalId }, _set: $journalSet) {
+              id
+            }
+            delete_journal_lines(where: { journal_entry_id: { _eq: $journalId } }) {
+              affected_rows
+            }
+          }
+        `,
+        { journalId: existingJournalId, journalSet },
+      );
+
+      unwrap(batchResponse, "Failed to update journal.");
+    }
   } else {
+    // Insert invoice lines (if any) first, then create journal
+    if (invoiceLineObjects.length) {
+      const insertLinesResponse = await requestAdminGraphql<{
+        insert_invoice_lines: { affected_rows: number };
+      }>(
+        `
+          mutation InsertInvoiceLines($objects: [invoice_lines_insert_input!]!) {
+            insert_invoice_lines(objects: $objects) {
+              affected_rows
+            }
+          }
+        `,
+        { objects: invoiceLineObjects },
+      );
+
+      unwrap(insertLinesResponse, "Failed to save invoice lines.");
+    }
+
     const insertJournalResponse = await requestAdminGraphql<{
       insert_journal_entries_one: { id: string } | null;
     }>(
@@ -404,21 +437,6 @@ async function syncOrderAccounting(orderId: string, payload: OrderPayload, items
     throw new Error("Journal id was not returned.");
   }
   const ensuredJournalId = journalId;
-
-  const deleteJournalLinesResponse = await requestAdminGraphql<{
-    delete_journal_lines: { affected_rows: number };
-  }>(
-    `
-      mutation DeleteJournalLines($journalId: uuid!) {
-        delete_journal_lines(where: { journal_entry_id: { _eq: $journalId } }) {
-          affected_rows
-        }
-      }
-    `,
-    { journalId: ensuredJournalId },
-  );
-
-  unwrap(deleteJournalLinesResponse, "Failed to clear journal lines.");
 
   const journalLines = buildJournalLines(
     total,
@@ -485,77 +503,78 @@ async function deleteLinkedAccounting(orderId: string) {
   const journalIds = context.journal_entries.map((journal) => journal.id);
 
   if (invoiceIds.length) {
-    // Delete journal entries created by invoice sync (reference_type = "invoice")
-    for (const invId of invoiceIds) {
-      const invJournals = await requestAdminGraphql<{ journal_entries: Array<{ id: string }> }>(
-        `query InvoiceJournals($refId: uuid!) {
-          journal_entries(where: { reference_type: { _eq: "invoice" }, reference_id: { _eq: $refId } }) { id }
-        }`,
-        { refId: invId },
-      ).catch(() => ({ body: { data: { journal_entries: [] } } }));
+    // Find all journal entries created by invoice sync (reference_type = "invoice")
+    const invJournals = await requestAdminGraphql<{ journal_entries: Array<{ id: string }> }>(
+      `query InvoiceJournals($refIds: [uuid!]!) {
+        journal_entries(where: { reference_type: { _eq: "invoice" }, reference_id: { _in: $refIds } }) { id }
+      }`,
+      { refIds: invoiceIds },
+    ).catch(() => ({ body: { data: { journal_entries: [] as Array<{ id: string }> } } }));
 
-      const invJournalIds = invJournals.body.data?.journal_entries?.map((j) => j.id) ?? [];
-      if (invJournalIds.length) {
-        await requestAdminGraphql(
-          `mutation DelInvJournalLines($ids: [uuid!]!) { delete_journal_lines(where: { journal_entry_id: { _in: $ids } }) { affected_rows } }`,
-          { ids: invJournalIds },
-        ).catch(() => {});
-        await requestAdminGraphql(
-          `mutation DelInvJournals($ids: [uuid!]!) { delete_journal_entries(where: { id: { _in: $ids } }) { affected_rows } }`,
-          { ids: invJournalIds },
-        ).catch(() => {});
-      }
+    const invJournalIds = invJournals.body.data?.journal_entries?.map((j) => j.id) ?? [];
+
+    // Batch: delete invoice-journal lines + invoice-journals + invoice lines + invoices
+    if (invJournalIds.length) {
+      const batchResponse = await requestAdminGraphql<{
+        delete_journal_lines: { affected_rows: number };
+        delete_journal_entries: { affected_rows: number };
+        delete_invoice_lines: { affected_rows: number };
+        delete_invoices: { affected_rows: number };
+      }>(
+        `
+          mutation DeleteInvoiceAccountingBatch($invJournalIds: [uuid!]!, $invoiceIds: [uuid!]!) {
+            delete_journal_lines(where: { journal_entry_id: { _in: $invJournalIds } }) {
+              affected_rows
+            }
+            delete_journal_entries(where: { id: { _in: $invJournalIds } }) {
+              affected_rows
+            }
+            delete_invoice_lines(where: { invoice_id: { _in: $invoiceIds } }) {
+              affected_rows
+            }
+            delete_invoices(where: { id: { _in: $invoiceIds } }) {
+              affected_rows
+            }
+          }
+        `,
+        { invJournalIds, invoiceIds },
+      );
+
+      unwrap(batchResponse, "Failed to delete linked invoice accounting.");
+    } else {
+      // No invoice journals — just delete invoice lines + invoices
+      const batchResponse = await requestAdminGraphql<{
+        delete_invoice_lines: { affected_rows: number };
+        delete_invoices: { affected_rows: number };
+      }>(
+        `
+          mutation DeleteInvoicesBatch($invoiceIds: [uuid!]!) {
+            delete_invoice_lines(where: { invoice_id: { _in: $invoiceIds } }) {
+              affected_rows
+            }
+            delete_invoices(where: { id: { _in: $invoiceIds } }) {
+              affected_rows
+            }
+          }
+        `,
+        { invoiceIds },
+      );
+
+      unwrap(batchResponse, "Failed to delete linked invoices.");
     }
-
-    const deleteInvoiceLinesResponse = await requestAdminGraphql<{
-      delete_invoice_lines: { affected_rows: number };
-    }>(
-      `
-        mutation DeleteInvoiceLinesBatch($invoiceIds: [uuid!]!) {
-          delete_invoice_lines(where: { invoice_id: { _in: $invoiceIds } }) {
-            affected_rows
-          }
-        }
-      `,
-      { invoiceIds },
-    );
-    unwrap(deleteInvoiceLinesResponse, "Failed to delete linked invoice lines.");
-
-    const deleteInvoicesResponse = await requestAdminGraphql<{
-      delete_invoices: { affected_rows: number };
-    }>(
-      `
-        mutation DeleteInvoicesBatch($invoiceIds: [uuid!]!) {
-          delete_invoices(where: { id: { _in: $invoiceIds } }) {
-            affected_rows
-          }
-        }
-      `,
-      { invoiceIds },
-    );
-    unwrap(deleteInvoicesResponse, "Failed to delete linked invoices.");
   }
 
   if (journalIds.length) {
-    const deleteJournalLinesResponse = await requestAdminGraphql<{
+    // Batch: delete journal lines + journals in one request
+    const batchResponse = await requestAdminGraphql<{
       delete_journal_lines: { affected_rows: number };
-    }>(
-      `
-        mutation DeleteJournalLinesBatch($journalIds: [uuid!]!) {
-          delete_journal_lines(where: { journal_entry_id: { _in: $journalIds } }) {
-            affected_rows
-          }
-        }
-      `,
-      { journalIds },
-    );
-    unwrap(deleteJournalLinesResponse, "Failed to delete linked journal lines.");
-
-    const deleteJournalsResponse = await requestAdminGraphql<{
       delete_journal_entries: { affected_rows: number };
     }>(
       `
         mutation DeleteJournalsBatch($journalIds: [uuid!]!) {
+          delete_journal_lines(where: { journal_entry_id: { _in: $journalIds } }) {
+            affected_rows
+          }
           delete_journal_entries(where: { id: { _in: $journalIds } }) {
             affected_rows
           }
@@ -563,7 +582,8 @@ async function deleteLinkedAccounting(orderId: string) {
       `,
       { journalIds },
     );
-    unwrap(deleteJournalsResponse, "Failed to delete linked journals.");
+
+    unwrap(batchResponse, "Failed to delete linked journals.");
   }
 }
 

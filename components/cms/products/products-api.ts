@@ -166,6 +166,17 @@ export async function deleteSubcategory(id: string) {
 }
 
 export async function createProduct(payload: ProductPayload, features: string[]) {
+  // Use Hasura nested insert: product + features in a single mutation
+  const object: Record<string, unknown> = { ...payload };
+  if (features.length) {
+    object.product_features = {
+      data: features.map((feature, index) => ({
+        feature,
+        sort_order: index,
+      })),
+    };
+  }
+
   const response = await requestAdminGraphql<{ insert_products_one: { id: string } | null }>(
     `
       mutation CreateProduct($object: products_insert_input!) {
@@ -174,7 +185,7 @@ export async function createProduct(payload: ProductPayload, features: string[])
         }
       }
     `,
-    { object: payload },
+    { object },
   );
 
   const data = unwrap(response, "Product was not created.");
@@ -184,7 +195,6 @@ export async function createProduct(payload: ProductPayload, features: string[])
     throw new Error("Product ID was not returned.");
   }
 
-  await replaceProductFeatures(productId, features);
   return productId;
 }
 
@@ -193,19 +203,61 @@ export async function updateProduct(
   payload: Partial<ProductPayload>,
   features: string[],
 ) {
-  const response = await requestAdminGraphql<{ update_products_by_pk: { id: string } | null }>(
-    `
-      mutation UpdateProduct($id: uuid!, $set: products_set_input!) {
-        update_products_by_pk(pk_columns: { id: $id }, _set: $set) {
-          id
-        }
-      }
-    `,
-    { id, set: payload },
-  );
+  // Batch update + delete old features + insert new features in one request
+  const featureObjects = features.map((feature, index) => ({
+    product_id: id,
+    feature,
+    sort_order: index,
+  }));
 
-  unwrap(response, "Product was not updated.");
-  await replaceProductFeatures(id, features);
+  if (featureObjects.length) {
+    const response = await requestAdminGraphql<{
+      update_products_by_pk: { id: string } | null;
+      delete_product_features: { affected_rows: number };
+      insert_product_features: { affected_rows: number };
+    }>(
+      `
+        mutation UpdateProductWithFeatures(
+          $id: uuid!,
+          $set: products_set_input!,
+          $featureObjects: [product_features_insert_input!]!
+        ) {
+          update_products_by_pk(pk_columns: { id: $id }, _set: $set) {
+            id
+          }
+          delete_product_features(where: { product_id: { _eq: $id } }) {
+            affected_rows
+          }
+          insert_product_features(objects: $featureObjects) {
+            affected_rows
+          }
+        }
+      `,
+      { id, set: payload, featureObjects },
+    );
+
+    unwrap(response, "Product was not updated.");
+  } else {
+    // No features — just update product and clear old features
+    const response = await requestAdminGraphql<{
+      update_products_by_pk: { id: string } | null;
+      delete_product_features: { affected_rows: number };
+    }>(
+      `
+        mutation UpdateProductClearFeatures($id: uuid!, $set: products_set_input!) {
+          update_products_by_pk(pk_columns: { id: $id }, _set: $set) {
+            id
+          }
+          delete_product_features(where: { product_id: { _eq: $id } }) {
+            affected_rows
+          }
+        }
+      `,
+      { id, set: payload },
+    );
+
+    unwrap(response, "Product was not updated.");
+  }
 }
 
 export async function deleteProduct(id: string) {
@@ -221,48 +273,6 @@ export async function deleteProduct(id: string) {
   );
 
   unwrap(response, "Product was not deleted.");
-}
-
-async function replaceProductFeatures(productId: string, features: string[]) {
-  const deleteResponse = await requestAdminGraphql<{
-    delete_product_features: { affected_rows: number };
-  }>(
-    `
-      mutation ClearProductFeatures($productId: uuid!) {
-        delete_product_features(where: { product_id: { _eq: $productId } }) {
-          affected_rows
-        }
-      }
-    `,
-    { productId },
-  );
-
-  unwrap(deleteResponse, "Product features were not cleared.");
-
-  if (!features.length) {
-    return;
-  }
-
-  const insertResponse = await requestAdminGraphql<{
-    insert_product_features: { affected_rows: number };
-  }>(
-    `
-      mutation InsertProductFeatures($objects: [product_features_insert_input!]!) {
-        insert_product_features(objects: $objects) {
-          affected_rows
-        }
-      }
-    `,
-    {
-      objects: features.map((feature, index) => ({
-        product_id: productId,
-        feature,
-        sort_order: index,
-      })),
-    },
-  );
-
-  unwrap(insertResponse, "Product features were not saved.");
 }
 
 export async function uploadProductImage(file: File) {

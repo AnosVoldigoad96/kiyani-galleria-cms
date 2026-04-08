@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   CmsAccountingStat,
@@ -470,12 +470,138 @@ function formatDateValue(value: string | null | undefined) {
   return value.slice(0, 10);
 }
 
+// ---------------------------------------------------------------------------
+// Extracted mapping helpers (reused by subscriptions for targeted merges)
+// ---------------------------------------------------------------------------
+
+function mapOrders(
+  orders: CmsGraphqlResponse["orders"],
+  orderItems: CmsGraphqlResponse["order_items"],
+): CmsOrder[] {
+  const orderItemsByOrder = new Map<string, CmsGraphqlResponse["order_items"]>();
+  orderItems.forEach((item) => {
+    const current = orderItemsByOrder.get(item.order_id) ?? [];
+    current.push(item);
+    orderItemsByOrder.set(item.order_id, current);
+  });
+
+  return orders.map((order) => {
+    const items = (orderItemsByOrder.get(order.id) ?? []).map((item) => ({
+      id: item.id,
+      productId: item.product_id,
+      productName: item.product_name,
+      sku: item.sku ?? "N/A",
+      quantity: Number(item.quantity ?? 0),
+      unitPricePkr: Number(item.unit_price_pkr ?? 0),
+      totalPricePkr: Number(item.total_price_pkr ?? 0),
+      unitPriceLabel: formatPkr(item.unit_price_pkr),
+      totalPriceLabel: formatPkr(item.total_price_pkr),
+    }));
+
+    return {
+      id: order.order_no,
+      orderId: order.id,
+      orderNo: order.order_no,
+      customer: {
+        name: order.customer_name,
+        email: order.customer_email ?? "No email",
+        city: order.city ?? "Unknown",
+        phone: order.customer_phone ?? "",
+        address: order.address ?? "",
+      },
+      items,
+      subtotalPkr: Number(order.subtotal_pkr ?? 0),
+      discountPkr: Number(order.discount_pkr ?? 0),
+      shippingPkr: Number(order.shipping_pkr ?? 0),
+      totalPkrValue: Number(order.total_pkr ?? 0),
+      totalPkr: formatPkr(order.total_pkr),
+      notes: order.notes ?? "",
+      paymentStatus:
+        order.payment_status === "paid"
+          ? "paid"
+          : order.payment_status === "failed"
+            ? "failed"
+            : order.payment_status === "refunded"
+              ? "refunded"
+              : "pending",
+      payment:
+        order.payment_status === "paid"
+          ? "Paid"
+          : order.payment_status === "failed"
+            ? "Failed"
+            : order.payment_status === "refunded"
+              ? "Refunded"
+              : "Pending",
+      fulfillmentStatus:
+        order.fulfillment_status === "packed"
+          ? "packed"
+          : order.fulfillment_status === "dispatched"
+            ? "dispatched"
+            : order.fulfillment_status === "delivered"
+              ? "delivered"
+              : order.fulfillment_status === "cancelled"
+                ? "cancelled"
+                : "processing",
+      fulfillment:
+        order.fulfillment_status === "dispatched"
+          ? "Dispatched"
+          : order.fulfillment_status === "packed"
+            ? "Packed"
+            : order.fulfillment_status === "delivered"
+              ? "Delivered"
+              : order.fulfillment_status === "cancelled"
+                ? "Cancelled"
+                : "Processing",
+    };
+  }) as CmsOrder[];
+}
+
+function mapRequests(
+  customRequests: CmsGraphqlResponse["custom_requests"],
+): CmsRequest[] {
+  return customRequests.map((request) => ({
+    requestId: request.id,
+    requestNo: request.request_no,
+    id: request.request_no,
+    userId: request.user_id ?? null,
+    customer: request.customer_name,
+    customerEmail: request.customer_email ?? "",
+    customerPhone: request.customer_phone ?? "",
+    type: request.request_type,
+    brief: request.brief,
+    dueDateValue: formatDateValue(request.due_date) || null,
+    dueDate: formatDateLabel(request.due_date),
+    budgetPkrValue: request.budget_pkr === null ? null : Number(request.budget_pkr),
+    budgetPkr: formatPkr(request.budget_pkr),
+    priorityCode:
+      request.priority === "high"
+        ? "high"
+        : request.priority === "low"
+          ? "low"
+          : "medium",
+    priority: titleCase(request.priority) as CmsRequest["priority"],
+    statusCode:
+      request.status === "quoted"
+        ? "quoted"
+        : request.status === "in_progress"
+          ? "in_progress"
+          : request.status === "completed"
+            ? "completed"
+            : request.status === "cancelled"
+              ? "cancelled"
+              : "new",
+    status:
+      request.status === "in_progress"
+        ? "In Progress"
+        : titleCase(request.status) as CmsRequest["status"],
+  }));
+}
+
 function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
   const categoryMap = new Map(data.categories.map((item) => [item.id, item]));
   const subcategoryMap = new Map(data.subcategories.map((item) => [item.id, item]));
   const featuresByProduct = new Map<string, string[]>();
   const reviewReplyByReview = new Map(data.review_replies.map((item) => [item.review_id, item.reply]));
-  const orderItemsByOrder = new Map<string, CmsGraphqlResponse["order_items"]>();
   const invoiceLineCountByInvoice = new Map<string, number>();
   const invoiceLinesByInvoice = new Map<string, CmsGraphqlResponse["invoice_lines"]>();
   const linesByJournal = new Map<string, CmsGraphqlResponse["journal_lines"]>();
@@ -484,12 +610,6 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     const current = featuresByProduct.get(feature.product_id) ?? [];
     current.push(feature.feature);
     featuresByProduct.set(feature.product_id, current);
-  });
-
-  data.order_items.forEach((item) => {
-    const current = orderItemsByOrder.get(item.order_id) ?? [];
-    current.push(item);
-    orderItemsByOrder.set(item.order_id, current);
   });
 
   data.invoice_lines.forEach((line) => {
@@ -622,112 +742,8 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     };
   });
 
-  const orders: CmsOrder[] = data.orders.map((order) => {
-    const items = (orderItemsByOrder.get(order.id) ?? []).map((item) => ({
-      id: item.id,
-      productId: item.product_id,
-      productName: item.product_name,
-      sku: item.sku ?? "N/A",
-      quantity: Number(item.quantity ?? 0),
-      unitPricePkr: Number(item.unit_price_pkr ?? 0),
-      totalPricePkr: Number(item.total_price_pkr ?? 0),
-      unitPriceLabel: formatPkr(item.unit_price_pkr),
-      totalPriceLabel: formatPkr(item.total_price_pkr),
-    }));
-
-    return {
-      id: order.order_no,
-      orderId: order.id,
-      orderNo: order.order_no,
-      customer: {
-        name: order.customer_name,
-        email: order.customer_email ?? "No email",
-        city: order.city ?? "Unknown",
-        phone: order.customer_phone ?? "",
-        address: order.address ?? "",
-      },
-      items,
-      subtotalPkr: Number(order.subtotal_pkr ?? 0),
-      discountPkr: Number(order.discount_pkr ?? 0),
-      shippingPkr: Number(order.shipping_pkr ?? 0),
-      totalPkrValue: Number(order.total_pkr ?? 0),
-      totalPkr: formatPkr(order.total_pkr),
-      notes: order.notes ?? "",
-      paymentStatus:
-        order.payment_status === "paid"
-          ? "paid"
-          : order.payment_status === "failed"
-            ? "failed"
-            : order.payment_status === "refunded"
-              ? "refunded"
-              : "pending",
-      payment:
-        order.payment_status === "paid"
-          ? "Paid"
-          : order.payment_status === "failed"
-            ? "Failed"
-            : order.payment_status === "refunded"
-              ? "Refunded"
-              : "Pending",
-      fulfillmentStatus:
-        order.fulfillment_status === "packed"
-          ? "packed"
-          : order.fulfillment_status === "dispatched"
-            ? "dispatched"
-            : order.fulfillment_status === "delivered"
-              ? "delivered"
-              : order.fulfillment_status === "cancelled"
-                ? "cancelled"
-                : "processing",
-      fulfillment:
-        order.fulfillment_status === "dispatched"
-          ? "Dispatched"
-          : order.fulfillment_status === "packed"
-            ? "Packed"
-            : order.fulfillment_status === "delivered"
-              ? "Delivered"
-              : order.fulfillment_status === "cancelled"
-                ? "Cancelled"
-            : "Processing",
-    };
-  });
-
-  const requests: CmsRequest[] = data.custom_requests.map((request) => ({
-    requestId: request.id,
-    requestNo: request.request_no,
-    id: request.request_no,
-    userId: request.user_id ?? null,
-    customer: request.customer_name,
-    customerEmail: request.customer_email ?? "",
-    customerPhone: request.customer_phone ?? "",
-    type: request.request_type,
-    brief: request.brief,
-    dueDateValue: formatDateValue(request.due_date) || null,
-    dueDate: formatDateLabel(request.due_date),
-    budgetPkrValue: request.budget_pkr === null ? null : Number(request.budget_pkr),
-    budgetPkr: formatPkr(request.budget_pkr),
-    priorityCode:
-      request.priority === "high"
-        ? "high"
-        : request.priority === "low"
-          ? "low"
-          : "medium",
-    priority: titleCase(request.priority) as CmsRequest["priority"],
-    statusCode:
-      request.status === "quoted"
-        ? "quoted"
-        : request.status === "in_progress"
-          ? "in_progress"
-          : request.status === "completed"
-            ? "completed"
-            : request.status === "cancelled"
-              ? "cancelled"
-              : "new",
-    status:
-      request.status === "in_progress"
-        ? "In Progress"
-        : titleCase(request.status) as CmsRequest["status"],
-  }));
+  const orders = mapOrders(data.orders, data.order_items);
+  const requests = mapRequests(data.custom_requests);
 
   const users: CmsUser[] = data.profiles.map((profile) => {
     const userOrders = data.orders.filter((order) => order.user_id === profile.id);
@@ -1084,24 +1100,76 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
   };
 }
 
+/**
+ * Merge live subscription data into the existing CmsDataBundle.
+ * Only orders, order_items, and custom_requests are supported since those
+ * are the tables that change from external user actions (storefront).
+ */
+function mergeLiveData(
+  current: CmsDataBundle,
+  table: string,
+  rawOrders?: CmsGraphqlResponse["orders"],
+  rawOrderItems?: CmsGraphqlResponse["order_items"],
+  rawRequests?: CmsGraphqlResponse["custom_requests"],
+): CmsDataBundle {
+  const updated = { ...current };
+
+  if ((table === "orders" || table === "order_items") && rawOrders && rawOrderItems) {
+    updated.orders = mapOrders(rawOrders, rawOrderItems);
+
+    // Recalculate dashboard stats that depend on orders
+    const paidOrders = rawOrders.filter((o) => o.payment_status === "paid");
+    const revenue = paidOrders.reduce((sum, o) => sum + Number(o.total_pkr ?? 0), 0);
+    const openOrders = rawOrders.filter((o) => o.fulfillment_status !== "dispatched").length;
+    const packedOrders = rawOrders.filter((o) => o.fulfillment_status === "packed").length;
+
+    updated.stats = current.stats.map((stat) => {
+      if (stat.label === "Revenue tracked") {
+        return { ...stat, value: formatPkr(revenue), detail: `${paidOrders.length} paid orders` };
+      }
+      if (stat.label === "Open orders") {
+        return { ...stat, value: String(openOrders), detail: `${packedOrders} packed` };
+      }
+      return stat;
+    });
+  }
+
+  if (table === "custom_requests" && rawRequests) {
+    updated.requests = mapRequests(rawRequests);
+  }
+
+  return updated;
+}
+
 export function useCmsData() {
   const [data, setData] = useState<CmsDataBundle | null>(null);
   const [isLoading, setIsLoading] = useState(() => nhostConfigError === null);
   const [error, setError] = useState<string | null>(nhostConfigError);
   const [refreshIndex, setRefreshIndex] = useState(0);
 
+  // Stores raw subscription data for merging
+  const liveOrdersRef = useRef<CmsGraphqlResponse["orders"] | null>(null);
+  const liveOrderItemsRef = useRef<CmsGraphqlResponse["order_items"] | null>(null);
+  const liveRequestsRef = useRef<CmsGraphqlResponse["custom_requests"] | null>(null);
+
   const refetch = useCallback(() => {
     setRefreshIndex((current) => current + 1);
   }, []);
 
+  const patchData = useCallback(
+    (updater: (current: CmsDataBundle) => CmsDataBundle) => {
+      setData((current) => (current ? updater(current) : current));
+    },
+    [],
+  );
+
+  // Initial data load
   useEffect(() => {
     let active = true;
 
     void requestAdminGraphql<CmsGraphqlResponse>(CMS_QUERY)
       .then((response) => {
-        if (!active) {
-          return;
-        }
+        if (!active) return;
 
         if (response.body.errors?.length) {
           const message = response.body.errors.map((item) => item.message).join(", ");
@@ -1116,13 +1184,16 @@ export function useCmsData() {
           return;
         }
 
+        // Store raw data for subscription merging
+        liveOrdersRef.current = response.body.data.orders;
+        liveOrderItemsRef.current = response.body.data.order_items;
+        liveRequestsRef.current = response.body.data.custom_requests;
+
         setData(mapCmsData(response.body.data));
         setIsLoading(false);
       })
       .catch((caughtError) => {
-        if (!active) {
-          return;
-        }
+        if (!active) return;
 
         const message =
           caughtError instanceof Error ? caughtError.message : "Failed to load CMS data.";
@@ -1136,5 +1207,112 @@ export function useCmsData() {
     };
   }, [refreshIndex]);
 
-  return { data, error, isLoading, refetch };
+  // Live subscriptions for orders, order_items, and custom_requests
+  useEffect(() => {
+    if (!data) return;
+
+    const controller = new AbortController();
+
+    void connectLiveStream(controller.signal, (table, rows) => {
+      if (table === "orders") {
+        liveOrdersRef.current = rows as CmsGraphqlResponse["orders"];
+        setData((current) =>
+          current
+            ? mergeLiveData(
+                current,
+                "orders",
+                liveOrdersRef.current!,
+                liveOrderItemsRef.current ?? [],
+              )
+            : current,
+        );
+      } else if (table === "order_items") {
+        liveOrderItemsRef.current = rows as CmsGraphqlResponse["order_items"];
+        setData((current) =>
+          current
+            ? mergeLiveData(
+                current,
+                "order_items",
+                liveOrdersRef.current ?? [],
+                liveOrderItemsRef.current!,
+              )
+            : current,
+        );
+      } else if (table === "custom_requests") {
+        liveRequestsRef.current = rows as CmsGraphqlResponse["custom_requests"];
+        setData((current) =>
+          current
+            ? mergeLiveData(current, "custom_requests", undefined, undefined, liveRequestsRef.current!)
+            : current,
+        );
+      }
+    });
+
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data !== null]);
+
+  return { data, error, isLoading, refetch, patchData };
+}
+
+// ---------------------------------------------------------------------------
+// Live subscription stream (connects to /api/subscribe SSE endpoint)
+// ---------------------------------------------------------------------------
+
+async function connectLiveStream(
+  signal: AbortSignal,
+  onData: (table: string, rows: unknown[]) => void,
+) {
+  const { getAccessToken } = await import("@/lib/admin-graphql-client");
+
+  const connect = async () => {
+    try {
+      const token = await getAccessToken();
+      const response = await fetch("/api/subscribe", {
+        headers: { Authorization: `Bearer ${token}` },
+        signal,
+      });
+
+      if (!response.ok || !response.body) return;
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done || signal.aborted) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const parsed = JSON.parse(line.slice(6)) as {
+                table: string;
+                data: unknown[];
+              };
+              onData(parsed.table, parsed.data);
+            } catch {
+              // Ignore malformed SSE data
+            }
+          }
+        }
+      }
+    } catch {
+      // Connection failed or aborted
+    }
+
+    // Reconnect after 3 seconds if not aborted
+    if (!signal.aborted) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      if (!signal.aborted) {
+        void connect();
+      }
+    }
+  };
+
+  void connect();
 }

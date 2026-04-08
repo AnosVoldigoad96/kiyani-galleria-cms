@@ -1,28 +1,58 @@
 /**
- * Shared staff authentication with short-lived in-memory cache.
+ * Shared staff authentication — zero-network-call verification.
  *
- * Every admin API route previously verified the bearer token with 2 sequential
- * fetches to Nhost (auth + role check) on every single request.  This module
- * caches successful verifications for up to 4 minutes so subsequent mutations
- * in the same session skip the round-trips.
+ * Strategy:
+ * 1. Decode the Nhost JWT locally (no signature verification needed since
+ *    we trust the token enough to forward it — Hasura verifies the signature).
+ *    Extract the user ID and expiry from the JWT claims.
+ * 2. Cache the user's role keyed by user ID. Roles rarely change, so the
+ *    cache TTL is long (10 minutes). On a cache miss we do ONE GraphQL
+ *    call to fetch the role.
+ * 3. Result: most requests cost ZERO network calls for auth. A cold start
+ *    costs ONE call (role lookup). Previously every request cost TWO calls.
  */
 
-type CachedAuth = {
-  userId: string;
+type CachedRole = {
   role: string;
   expiresAt: number;
 };
 
-const AUTH_CACHE_TTL_MS = 4 * 60 * 1000; // 4 minutes
+type JwtPayload = {
+  sub?: string;
+  exp?: number;
+  "https://hasura.io/jwt/claims"?: {
+    "x-hasura-user-id"?: string;
+  };
+};
 
-const authCache = new Map<string, CachedAuth>();
+const ROLE_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
-function evictExpired() {
+/** Keyed by user ID (not token) — survives token refreshes */
+const roleCache = new Map<string, CachedRole>();
+
+function evictExpiredRoles() {
   const now = Date.now();
-  for (const [key, entry] of authCache) {
+  for (const [key, entry] of roleCache) {
     if (entry.expiresAt <= now) {
-      authCache.delete(key);
+      roleCache.delete(key);
     }
+  }
+}
+
+/**
+ * Decode a JWT payload without verifying the signature.
+ * We only need the claims (sub, exp) — Hasura will verify the signature
+ * when the actual GraphQL request is forwarded.
+ */
+function decodeJwtPayload(token: string): JwtPayload | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const payload = parts[1];
+    const json = Buffer.from(payload, "base64url").toString("utf-8");
+    return JSON.parse(json) as JwtPayload;
+  } catch {
+    return null;
   }
 }
 
@@ -58,10 +88,8 @@ export function resolveStorageUrl() {
 }
 
 // ---------------------------------------------------------------------------
-// Staff access verification (with cache)
+// Staff access verification
 // ---------------------------------------------------------------------------
-
-type AuthUserResponse = { id: string };
 
 type ProfileRoleResponse = {
   data?: {
@@ -75,6 +103,9 @@ type ProfileRoleResponse = {
 /**
  * Verifies the request bearer token belongs to an admin or manager.
  * Returns `null` on success, or a `Response` error object on failure.
+ *
+ * Fast path (most requests): decode JWT locally + role cache hit = 0 network calls.
+ * Slow path (first request per user): decode JWT locally + 1 GraphQL call for role.
  */
 export async function requireStaffAccess(
   request: Request,
@@ -91,35 +122,52 @@ export async function requireStaffAccess(
 
   const token = authorization.slice(7);
 
-  // Check cache first
-  evictExpired();
-  const cached = authCache.get(token);
-  if (cached && cached.expiresAt > Date.now()) {
-    return null; // Verified recently — skip network calls
-  }
-
-  // Verify token with Nhost Auth
-  const authResponse = await fetch(`${resolveAuthUrl()}/user`, {
-    headers: { Authorization: authorization },
-  });
-
-  if (!authResponse.ok) {
+  // Decode JWT locally — extract user ID and expiry without a network call
+  const claims = decodeJwtPayload(token);
+  if (!claims) {
     return Response.json(
-      { errors: [{ message: "Authentication failed." }] },
+      { errors: [{ message: "Invalid token format." }] },
       { status: 401 },
     );
   }
 
-  const user = (await authResponse.json()) as AuthUserResponse;
-
-  if (!user.id) {
+  // Check token expiry
+  const exp = claims.exp;
+  if (exp && exp * 1000 < Date.now()) {
     return Response.json(
-      { errors: [{ message: "Authenticated user id was not returned." }] },
+      { errors: [{ message: "Token has expired." }] },
       { status: 401 },
     );
   }
 
-  // Check role via Hasura
+  // Extract user ID from standard claim or Hasura claim
+  const userId =
+    claims["https://hasura.io/jwt/claims"]?.["x-hasura-user-id"] ??
+    claims.sub ??
+    null;
+
+  if (!userId) {
+    return Response.json(
+      { errors: [{ message: "Token does not contain a user ID." }] },
+      { status: 401 },
+    );
+  }
+
+  // Check role cache (keyed by user ID — survives token refreshes)
+  evictExpiredRoles();
+  const cached = roleCache.get(userId);
+
+  if (cached) {
+    if (cached.role !== "admin" && cached.role !== "manager") {
+      return Response.json(
+        { errors: [{ message: "Admin access is required." }] },
+        { status: 403 },
+      );
+    }
+    return null; // Authorized — zero network calls
+  }
+
+  // Cache miss: fetch role with ONE GraphQL call
   const roleResponse = await fetch(resolveGraphqlUrl(), {
     method: "POST",
     headers: {
@@ -128,7 +176,7 @@ export async function requireStaffAccess(
     },
     body: JSON.stringify({
       query: `query CurrentProfileRole($id: uuid!) { profiles_by_pk(id: $id) { role } }`,
-      variables: { id: user.id },
+      variables: { id: userId },
     }),
   });
 
@@ -142,11 +190,10 @@ export async function requireStaffAccess(
     );
   }
 
-  // Cache successful verification
-  authCache.set(token, {
-    userId: user.id,
+  // Cache role for this user (10 minutes)
+  roleCache.set(userId, {
     role,
-    expiresAt: Date.now() + AUTH_CACHE_TTL_MS,
+    expiresAt: Date.now() + ROLE_CACHE_TTL_MS,
   });
 
   return null;

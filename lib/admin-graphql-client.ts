@@ -12,8 +12,18 @@ export async function getAccessToken() {
     throw new Error(nhostConfigError ?? "Nhost is not configured.");
   }
 
+  // Fast path: use the current session if the token has >60s left
+  const currentSession = nhost.getUserSession();
+  if (currentSession?.accessToken) {
+    const expiresIn = currentSession.accessTokenExpiresIn;
+    if (expiresIn && expiresIn > 60) {
+      return currentSession.accessToken;
+    }
+  }
+
+  // Only refresh when token is expiring soon or missing
   const refreshedSession = await nhost.refreshSession(60).catch(() => null);
-  const session = refreshedSession ?? nhost.getUserSession();
+  const session = refreshedSession ?? currentSession;
   const accessToken = session?.accessToken;
 
   if (!accessToken) {

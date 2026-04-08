@@ -123,6 +123,7 @@ export type CmsRequest = {
   requestId: string;
   requestNo: string;
   id: string;
+  userId: string | null;
   customer: string;
   customerEmail: string;
   customerPhone: string;

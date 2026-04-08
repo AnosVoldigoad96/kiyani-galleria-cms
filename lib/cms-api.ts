@@ -696,6 +696,7 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     requestId: request.id,
     requestNo: request.request_no,
     id: request.request_no,
+    userId: request.user_id ?? null,
     customer: request.customer_name,
     customerEmail: request.customer_email ?? "",
     customerPhone: request.customer_phone ?? "",

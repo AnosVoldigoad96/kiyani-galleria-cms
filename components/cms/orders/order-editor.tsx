@@ -86,6 +86,7 @@ export function buildOrderDraft(order: CmsOrder | null, products: CmsProduct[]):
 
 export type RequestPrefill = {
   orderNo: string;
+  userId: string | null;
   customerName: string;
   customerEmail: string;
   customerPhone: string;
@@ -178,6 +179,8 @@ export function OrderEditor({ open, editingOrder, products, prefillFromRequest, 
       subtotal_pkr: Number(subtotal.toFixed(2)), discount_pkr: Number(draft.discountPkr.toFixed(2)),
       shipping_pkr: Number(draft.shippingPkr.toFixed(2)), total_pkr: Number(total.toFixed(2)),
       notes: draft.notes.trim() || null,
+      // Pass user_id from request prefill when converting request → order
+      ...(prefillFromRequest?.userId ? { user_id: prefillFromRequest.userId } : {}),
     };
 
     setIsSaving(true); setError(null);

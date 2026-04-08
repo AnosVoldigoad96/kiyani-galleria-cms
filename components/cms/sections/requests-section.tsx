@@ -251,6 +251,7 @@ export function RequestsSection({ requests, products, onRefresh }: RequestsSecti
 
   const requestPrefill: RequestPrefill | null = convertingRequest ? {
     orderNo: convertingRequest.requestNo,
+    userId: convertingRequest.userId,
     customerName: convertingRequest.customer,
     customerEmail: convertingRequest.customerEmail,
     customerPhone: convertingRequest.customerPhone,

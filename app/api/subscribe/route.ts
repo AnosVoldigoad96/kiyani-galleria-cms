@@ -2,7 +2,6 @@ export const dynamic = "force-dynamic";
 
 import { createClient } from "graphql-ws";
 import WebSocket from "ws";
-import { requireStaffAccess, resolveGraphqlUrl } from "@/lib/staff-auth";
 
 const SUBSCRIPTIONS: Record<string, string> = {
   orders: `
@@ -61,31 +60,41 @@ const SUBSCRIPTIONS: Record<string, string> = {
   `,
 };
 
+function resolveWsUrl() {
+  const explicit = process.env.NEXT_PUBLIC_NHOST_GRAPHQL_URL;
+  const graphqlUrl =
+    explicit ??
+    (() => {
+      const sub = process.env.NEXT_PUBLIC_NHOST_SUBDOMAIN;
+      const region = process.env.NEXT_PUBLIC_NHOST_REGION;
+      if (sub && region) return `https://${sub}.graphql.${region}.nhost.run/v1`;
+      throw new Error("Missing Nhost GraphQL configuration.");
+    })();
+
+  return graphqlUrl.replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
+}
+
 export async function GET(request: Request) {
-  const adminSecret = process.env.HASURA_ADMIN_SECRET;
-  if (!adminSecret) {
-    return Response.json({ error: "HASURA_ADMIN_SECRET is not configured." }, { status: 500 });
+  const authorization = request.headers.get("authorization");
+
+  if (!authorization?.startsWith("Bearer ")) {
+    return Response.json({ error: "Missing bearer token." }, { status: 401 });
   }
 
-  const authError = await requireStaffAccess(request, adminSecret);
-  if (authError) return authError;
-
-  // Derive WebSocket URL from GraphQL URL
-  const graphqlUrl = resolveGraphqlUrl();
-  const wsUrl = graphqlUrl.replace(/^https?:\/\//, (match) =>
-    match === "https://" ? "wss://" : "ws://",
-  );
-
+  const accessToken = authorization.slice(7);
+  const wsUrl = resolveWsUrl();
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     start(controller) {
+      // Connect to Hasura WebSocket using the user's JWT
+      // Hasura validates the JWT and enforces permissions (admin/manager via _exists)
       const client = createClient({
         url: wsUrl,
         webSocketImpl: WebSocket,
         connectionParams: {
           headers: {
-            "x-hasura-admin-secret": adminSecret,
+            Authorization: `Bearer ${accessToken}`,
           },
         },
         shouldRetry: () => true,

@@ -33,21 +33,33 @@ export async function getAccessToken() {
   return accessToken;
 }
 
+/**
+ * Send a GraphQL request directly to Hasura using the Nhost JWT.
+ *
+ * Hasura validates the JWT and enforces table permissions based on the
+ * user's role in the profiles table (via _exists permission filters).
+ * No proxy or admin secret needed.
+ */
 export async function requestAdminGraphql<T>(
   query: string,
   variables?: Record<string, unknown>,
 ) {
-  const accessToken = await getAccessToken();
+  if (!nhost) {
+    throw new Error(nhostConfigError ?? "Nhost is not configured.");
+  }
 
-  const response = await fetch("/api/hasura-admin", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ query, variables }),
+  // Ensure a fresh token before the request
+  const currentSession = nhost.getUserSession();
+  const expiresIn = currentSession?.accessTokenExpiresIn ?? 0;
+  if (expiresIn <= 60) {
+    await nhost.refreshSession(60).catch(() => null);
+  }
+
+  const response = await nhost.graphql.request<GraphqlResponse<T>>({
+    query,
+    variables,
   });
 
-  const body = (await response.json()) as GraphqlResponse<T>;
-  return { body, status: response.status };
+  const body = (response.body ?? response) as GraphqlResponse<T>;
+  return { body, status: 200 };
 }

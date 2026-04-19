@@ -4,18 +4,11 @@ import { createContext, useContext, useEffect, useState } from "react";
 
 import type { NhostClient } from "@nhost/nhost-js";
 
-import { requestAdminGraphql } from "@/lib/admin-graphql-client";
 import { nhost, nhostConfigError } from "@/lib/nhost";
 
 type NhostSession = NonNullable<ReturnType<NhostClient["getUserSession"]>>;
 type AuthUser = NhostSession["user"];
 type AppRole = "admin" | "manager" | "customer";
-
-type ProfileRoleApiResponse = {
-  userId?: string;
-  role?: AppRole | null;
-  errors?: Array<{ message: string }>;
-};
 
 type AuthContextValue = {
   user: AuthUser | null;
@@ -33,6 +26,13 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+type RoleQueryResponse = {
+  data?: {
+    profiles_by_pk: { role: AppRole | null } | null;
+  };
+  errors?: Array<{ message: string }>;
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<NhostSession | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -42,6 +42,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isRoleLoading, setIsRoleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Session initialization
   useEffect(() => {
     if (!nhost) {
       setIsLoading(false);
@@ -71,10 +72,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, []);
 
+  // Role lookup — query directly via Nhost SDK (JWT auth, no proxy)
   useEffect(() => {
-    if (!nhost) {
-      return;
-    }
+    if (!nhost) return;
 
     if (!session?.user?.id) {
       setAppRole(null);
@@ -82,70 +82,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const client = nhost;
-    const sessionUserId = session.user.id;
+    const userId = session.user.id;
     let active = true;
 
     setIsRoleLoading(true);
 
-    void client.refreshSession(60)
-      .catch(() => null)
-      .then((nextSession) => nextSession?.accessToken ?? client.getUserSession()?.accessToken ?? null)
-      .then(async (accessToken) => {
-        if (!accessToken) {
-          throw new Error("You must be signed in to load your profile role.");
-        }
+    void (async () => {
+      try {
+        // Ensure fresh token
+        await nhost.refreshSession(60).catch(() => null);
 
-        const response = await fetch("/api/profile-role", {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
+        // Query the user's own profile role directly via Hasura JWT auth
+        const response = await nhost.graphql.request<RoleQueryResponse>({
+          query: `query MyRole($id: uuid!) { profiles_by_pk(id: $id) { role } }`,
+          variables: { id: userId },
         });
 
-        const body = (await response.json()) as ProfileRoleApiResponse;
-        return { body, status: response.status };
-      })
-      .then((response) => {
-        if (!active) {
-          return;
-        }
+        if (!active) return;
 
-        if (response.body.errors?.length) {
+        const body = (response.body ?? response) as RoleQueryResponse;
+
+        if (body.errors?.length) {
           setAppRole(null);
-          setRoleError(response.body.errors.map((item) => item.message).join(", "));
+          setRoleError(body.errors.map((e) => e.message).join(", "));
           return;
         }
 
-        if (response.status >= 400) {
-          setAppRole(null);
-          setRoleError(`Role lookup failed with status ${response.status}.`);
-          return;
-        }
-
-        if (response.body.userId && response.body.userId !== sessionUserId) {
-          setAppRole(null);
-          setRoleError(
-            `Role lookup returned a different user id (${response.body.userId}) than the current session (${sessionUserId}).`,
-          );
-          return;
-        }
-
-        setAppRole(response.body.role ?? null);
+        const role = body.data?.profiles_by_pk?.role ?? null;
+        setAppRole(role);
         setRoleError(null);
-        setIsRoleLoading(false);
-      })
-      .catch((caughtError) => {
-        if (!active) {
-          return;
-        }
-
+      } catch (caughtError) {
+        if (!active) return;
         setAppRole(null);
         setRoleError(
           caughtError instanceof Error ? caughtError.message : "Failed to load profile role.",
         );
-        setIsRoleLoading(false);
-      });
+      } finally {
+        if (active) setIsRoleLoading(false);
+      }
+    })();
 
     return () => {
       active = false;

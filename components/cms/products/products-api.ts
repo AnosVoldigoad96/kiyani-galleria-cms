@@ -10,6 +10,12 @@ export type SeoPayload = {
   keywords: string | null;
   og_title: string | null;
   og_description: string | null;
+  canonical_url: string | null;
+  og_image_url: string | null;
+  robots_noindex: boolean;
+  sitemap_priority: number | null;
+  sitemap_changefreq: string | null;
+  structured_data_overrides: unknown;
 };
 
 export type CategoryPayload = {

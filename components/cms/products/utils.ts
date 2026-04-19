@@ -75,6 +75,35 @@ export function fromSubcategoryStatus(value: SubcategoryStatus) {
   return value === "live" ? "Live" : "Draft";
 }
 
+function seoFieldsFrom(
+  entity:
+    | {
+        canonicalUrl?: string | null;
+        ogImageUrl?: string | null;
+        robotsNoindex?: boolean;
+        sitemapPriority?: number | null;
+        sitemapChangefreq?: string | null;
+        structuredDataOverrides?: unknown;
+      }
+    | null
+    | undefined,
+) {
+  return {
+    canonicalUrl: entity?.canonicalUrl ?? "",
+    ogImageUrl: entity?.ogImageUrl ?? "",
+    robotsNoindex: entity?.robotsNoindex ?? false,
+    sitemapPriority:
+      entity?.sitemapPriority === null || entity?.sitemapPriority === undefined
+        ? ""
+        : String(entity.sitemapPriority),
+    sitemapChangefreq: entity?.sitemapChangefreq ?? "",
+    structuredDataOverrides:
+      entity?.structuredDataOverrides == null
+        ? ""
+        : JSON.stringify(entity.structuredDataOverrides, null, 2),
+  };
+}
+
 export function categoryToFormState(category?: CmsCategory | null): CategoryFormState {
   return {
     name: category?.name ?? "",
@@ -87,6 +116,7 @@ export function categoryToFormState(category?: CmsCategory | null): CategoryForm
     keywords: category?.keywords ?? "",
     ogTitle: category?.ogTitle ?? "",
     ogDescription: category?.ogDescription ?? "",
+    ...seoFieldsFrom(category),
   };
 }
 
@@ -106,6 +136,7 @@ export function subcategoryToFormState(
     keywords: subcategory?.keywords ?? "",
     ogTitle: subcategory?.ogTitle ?? "",
     ogDescription: subcategory?.ogDescription ?? "",
+    ...seoFieldsFrom(subcategory),
   };
 }
 
@@ -141,5 +172,6 @@ export function productToFormState(
     keywords: product?.keywords ?? "",
     ogTitle: product?.ogTitle ?? "",
     ogDescription: product?.ogDescription ?? "",
+    ...seoFieldsFrom(product),
   };
 }

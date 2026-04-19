@@ -10,6 +10,12 @@ export type CmsSeoFields = {
   keywords?: string | null;
   ogTitle?: string | null;
   ogDescription?: string | null;
+  canonicalUrl?: string | null;
+  ogImageUrl?: string | null;
+  robotsNoindex?: boolean;
+  sitemapPriority?: number | null;
+  sitemapChangefreq?: string | null;
+  structuredDataOverrides?: unknown;
 };
 
 export type CmsCategory = {

@@ -21,6 +21,7 @@ type ProductFormModalProps = {
   subcategories: CmsSubcategory[];
   fallbackCategoryId?: string;
   defaultSku?: string;
+  siblingMetaTitles?: string[];
   onClose: () => void;
   onSave: (state: ProductFormState, imageFile: File | null) => Promise<void>;
   isSaving: boolean;
@@ -35,6 +36,7 @@ export function ProductFormModal({
   subcategories,
   fallbackCategoryId,
   defaultSku,
+  siblingMetaTitles = [],
   onClose,
   onSave,
   isSaving,
@@ -465,6 +467,17 @@ export function ProductFormModal({
         keywords={formState.keywords}
         ogTitle={formState.ogTitle}
         ogDescription={formState.ogDescription}
+        canonicalUrl={formState.canonicalUrl}
+        ogImageUrl={formState.ogImageUrl}
+        robotsNoindex={formState.robotsNoindex}
+        sitemapPriority={formState.sitemapPriority === "" ? null : Number(formState.sitemapPriority)}
+        sitemapChangefreq={(formState.sitemapChangefreq || "") as "" | "always" | "hourly" | "daily" | "weekly" | "monthly" | "yearly" | "never"}
+        entityName={formState.name}
+        entitySlug={formState.slug}
+        entityType="product"
+        entityImageUrl={formState.imageUrl}
+        siblingMetaTitles={siblingMetaTitles}
+        structuredDataOverrides={formState.structuredDataOverrides}
         onChange={(field, value) => handleChange(field as keyof ProductFormState, value)}
         onGenerate={handleGenerateSeo}
         isGenerating={isGeneratingSeo}

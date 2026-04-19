@@ -17,6 +17,7 @@ type SubcategoryFormModalProps = {
   categories: CmsCategory[];
   subcategory: CmsSubcategory | null;
   fallbackCategoryId?: string;
+  siblingMetaTitles?: string[];
   onClose: () => void;
   onSave: (state: SubcategoryFormState) => Promise<void>;
   isSaving: boolean;
@@ -28,6 +29,7 @@ export function SubcategoryFormModal({
   categories,
   subcategory,
   fallbackCategoryId,
+  siblingMetaTitles = [],
   onClose,
   onSave,
   isSaving,
@@ -51,13 +53,13 @@ export function SubcategoryFormModal({
     [categories, formState.categoryId],
   );
 
-  const handleChange = (field: keyof SubcategoryFormState, value: string) => {
+  const handleChange = (field: keyof SubcategoryFormState, value: string | boolean) => {
     if (field === "slug") {
       slugTouched.current = true;
     }
     setFormState((current) => {
       const next = { ...current, [field]: value };
-      if (field === "name" && !slugTouched.current) {
+      if (field === "name" && !slugTouched.current && typeof value === "string") {
         next.slug = slugify(value);
       }
       return next;
@@ -222,6 +224,16 @@ export function SubcategoryFormModal({
         keywords={formState.keywords}
         ogTitle={formState.ogTitle}
         ogDescription={formState.ogDescription}
+        canonicalUrl={formState.canonicalUrl}
+        ogImageUrl={formState.ogImageUrl}
+        robotsNoindex={formState.robotsNoindex}
+        sitemapPriority={formState.sitemapPriority === "" ? null : Number(formState.sitemapPriority)}
+        sitemapChangefreq={(formState.sitemapChangefreq || "") as "" | "always" | "hourly" | "daily" | "weekly" | "monthly" | "yearly" | "never"}
+        entityName={formState.name}
+        entitySlug={formState.slug}
+        entityType="subcategory"
+        siblingMetaTitles={siblingMetaTitles}
+        structuredDataOverrides={formState.structuredDataOverrides}
         onChange={(field, value) => handleChange(field as keyof SubcategoryFormState, value)}
         onGenerate={handleGenerateSeo}
         isGenerating={isGeneratingSeo}

@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   Package,
+  Search,
   Settings2,
   ShoppingBag,
   Users,
@@ -17,7 +18,8 @@ export type SectionId =
   | "orders"
   | "requests"
   | "users"
-  | "brand";
+  | "brand"
+  | "seo";
 
 export const sections = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, count: "04" },
@@ -28,6 +30,7 @@ export const sections = [
   { id: "requests", label: "Requests", icon: FolderKanban, count: "12" },
   { id: "users", label: "Users", icon: Users, count: "248" },
   { id: "brand", label: "Brand", icon: Settings2, count: "08" },
+  { id: "seo", label: "SEO", icon: Search, count: "06" },
 ] as const satisfies ReadonlyArray<{
   id: SectionId;
   label: string;
@@ -39,7 +42,7 @@ export const navGroups = [
   { label: "Overview", ids: ["dashboard"] },
   { label: "Commerce", ids: ["products", "orders", "requests", "accounting"] },
   { label: "Community", ids: ["reviews", "users"] },
-  { label: "Settings", ids: ["brand"] },
+  { label: "Settings", ids: ["brand", "seo"] },
 ] as const satisfies ReadonlyArray<{
   label: string;
   ids: readonly SectionId[];
@@ -106,6 +109,15 @@ export function sectionCopy(section: SectionId) {
       description:
         "Manage administrative roles, permissions, and customer profiles.",
       action: "Invite staff",
+    };
+  }
+
+  if (section === "seo") {
+    return {
+      title: "SEO Settings",
+      description:
+        "Global SEO defaults, social links, robots directives, and structured data.",
+      action: "Save changes",
     };
   }
 

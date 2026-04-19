@@ -34,12 +34,35 @@ import type { SeoFormFields } from "./types";
 import { generateSku, nextSortOrder, parseFeatures, slugify } from "./utils";
 
 function seoPayloadFromForm(state: SeoFormFields) {
+  const priority =
+    state.sitemapPriority === "" || state.sitemapPriority == null
+      ? null
+      : Math.min(1, Math.max(0, Number(state.sitemapPriority)));
+
+  let structuredOverrides: unknown = null;
+  const raw = state.structuredDataOverrides?.trim();
+  if (raw) {
+    try {
+      structuredOverrides = JSON.parse(raw);
+    } catch {
+      // Invalid JSON → persist null; the CMS editor should surface the parse
+      // error before save but we defensively fall back here.
+      structuredOverrides = null;
+    }
+  }
+
   return {
     meta_title: state.metaTitle?.trim() || null,
     meta_description: state.metaDescription?.trim() || null,
     keywords: state.keywords?.trim() || null,
     og_title: state.ogTitle?.trim() || null,
     og_description: state.ogDescription?.trim() || null,
+    canonical_url: state.canonicalUrl?.trim() || null,
+    og_image_url: state.ogImageUrl?.trim() || null,
+    robots_noindex: Boolean(state.robotsNoindex),
+    sitemap_priority: priority,
+    sitemap_changefreq: state.sitemapChangefreq || null,
+    structured_data_overrides: structuredOverrides,
   };
 }
 
@@ -345,6 +368,9 @@ export function ProductsSection({
       <CategoryFormModal
         open={categoryModalOpen}
         category={categoryEditor}
+        siblingMetaTitles={categories
+          .filter((c) => c.id !== categoryEditor?.id && c.metaTitle)
+          .map((c) => (c.metaTitle ?? "").toLowerCase())}
         onClose={() => {
           setCategoryModalOpen(false);
           resetError();
@@ -358,6 +384,9 @@ export function ProductsSection({
         categories={categories}
         subcategory={subcategoryEditor}
         fallbackCategoryId={subcategoryFallbackCategoryId ?? defaultCategoryId}
+        siblingMetaTitles={subcategories
+          .filter((s) => s.id !== subcategoryEditor?.id && s.metaTitle)
+          .map((s) => (s.metaTitle ?? "").toLowerCase())}
         onClose={() => {
           setSubcategoryModalOpen(false);
           setSubcategoryFallbackCategoryId(undefined);
@@ -375,6 +404,9 @@ export function ProductsSection({
         subcategories={subcategories}
         fallbackCategoryId={defaultCategoryId}
         defaultSku={generateSku(products)}
+        siblingMetaTitles={products
+          .filter((p) => p.id !== productEditor?.id && p.metaTitle)
+          .map((p) => (p.metaTitle ?? "").toLowerCase())}
         onClose={() => {
           setProductModalOpen(false);
           resetError();

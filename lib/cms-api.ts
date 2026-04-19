@@ -36,6 +36,12 @@ type CmsGraphqlResponse = {
     keywords: string | null;
     og_title: string | null;
     og_description: string | null;
+    canonical_url: string | null;
+    og_image_url: string | null;
+    robots_noindex: boolean | null;
+    sitemap_priority: number | null;
+    sitemap_changefreq: string | null;
+    structured_data_overrides: unknown;
   }>;
   subcategories: Array<{
     id: string;
@@ -50,6 +56,12 @@ type CmsGraphqlResponse = {
     keywords: string | null;
     og_title: string | null;
     og_description: string | null;
+    canonical_url: string | null;
+    og_image_url: string | null;
+    robots_noindex: boolean | null;
+    sitemap_priority: number | null;
+    sitemap_changefreq: string | null;
+    structured_data_overrides: unknown;
   }>;
   products: Array<{
     id: string;
@@ -79,6 +91,12 @@ type CmsGraphqlResponse = {
     keywords: string | null;
     og_title: string | null;
     og_description: string | null;
+    canonical_url: string | null;
+    og_image_url: string | null;
+    robots_noindex: boolean | null;
+    sitemap_priority: number | null;
+    sitemap_changefreq: string | null;
+    structured_data_overrides: unknown;
   }>;
   product_features: Array<{
     product_id: string;
@@ -250,6 +268,12 @@ const CMS_QUERY = `
       keywords
       og_title
       og_description
+      canonical_url
+      og_image_url
+      robots_noindex
+      sitemap_priority
+      sitemap_changefreq
+      structured_data_overrides
     }
     subcategories(order_by: { sort_order: asc }) {
       id
@@ -264,6 +288,12 @@ const CMS_QUERY = `
       keywords
       og_title
       og_description
+      canonical_url
+      og_image_url
+      robots_noindex
+      sitemap_priority
+      sitemap_changefreq
+      structured_data_overrides
     }
     products(order_by: { created_at: desc }) {
       id
@@ -293,6 +323,12 @@ const CMS_QUERY = `
       keywords
       og_title
       og_description
+      canonical_url
+      og_image_url
+      robots_noindex
+      sitemap_priority
+      sitemap_changefreq
+      structured_data_overrides
     }
     product_features(order_by: [{ product_id: asc }, { sort_order: asc }]) {
       product_id
@@ -643,6 +679,12 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     keywords: category.keywords,
     ogTitle: category.og_title,
     ogDescription: category.og_description,
+    canonicalUrl: category.canonical_url ?? null,
+    ogImageUrl: category.og_image_url ?? null,
+    robotsNoindex: Boolean(category.robots_noindex),
+    sitemapPriority: category.sitemap_priority ?? null,
+    sitemapChangefreq: category.sitemap_changefreq ?? null,
+    structuredDataOverrides: category.structured_data_overrides ?? null,
   }));
 
   const subcategories: CmsSubcategory[] = data.subcategories.map((subcategory) => ({
@@ -660,6 +702,12 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     keywords: subcategory.keywords,
     ogTitle: subcategory.og_title,
     ogDescription: subcategory.og_description,
+    canonicalUrl: subcategory.canonical_url ?? null,
+    ogImageUrl: subcategory.og_image_url ?? null,
+    robotsNoindex: Boolean(subcategory.robots_noindex),
+    sitemapPriority: subcategory.sitemap_priority ?? null,
+    sitemapChangefreq: subcategory.sitemap_changefreq ?? null,
+    structuredDataOverrides: subcategory.structured_data_overrides ?? null,
   }));
 
   const products: CmsProduct[] = data.products.map((product) => ({
@@ -712,6 +760,12 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     keywords: product.keywords,
     ogTitle: product.og_title,
     ogDescription: product.og_description,
+    canonicalUrl: product.canonical_url ?? null,
+    ogImageUrl: product.og_image_url ?? null,
+    robotsNoindex: Boolean(product.robots_noindex),
+    sitemapPriority: product.sitemap_priority ?? null,
+    sitemapChangefreq: product.sitemap_changefreq ?? null,
+    structuredDataOverrides: product.structured_data_overrides ?? null,
   }));
 
   const reviews: CmsReview[] = data.reviews.map((review) => {

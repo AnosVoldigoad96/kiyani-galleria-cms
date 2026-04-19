@@ -8,6 +8,7 @@ import { sections, type SectionId } from "@/components/cms/cms-config";
 import { CmsHeader } from "@/components/cms/cms-header";
 import { CmsSidebar } from "@/components/cms/cms-sidebar";
 import { BrandSection } from "@/components/cms/sections/brand-section";
+import { SeoSettingsClient } from "@/components/cms/seo/seo-settings-client";
 import { AccountingSection } from "@/components/cms/sections/accounting-section";
 import { DashboardSection } from "@/components/cms/sections/dashboard-section";
 import { OrdersSection } from "@/components/cms/sections/orders-section";
@@ -167,6 +168,8 @@ export function CmsDashboard() {
         onRefresh={refetch}
       />
     );
+  } else if (activeSection === "seo") {
+    sectionView = <SeoSettingsClient />;
   }
 
   return (
@@ -199,6 +202,7 @@ export function CmsDashboard() {
             requests: data?.requests.length ?? 0,
             users: data?.users.length ?? 0,
             brand: data?.brandFlags.length ?? 0,
+            seo: 6,
           }}
           onClose={() => setSidebarOpen(false)}
           onToggleCollapse={handleToggleCollapse}

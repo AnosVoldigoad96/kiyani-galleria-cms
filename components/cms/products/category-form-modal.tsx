@@ -15,6 +15,7 @@ import { categoryToFormState, slugify } from "./utils";
 type CategoryFormModalProps = {
   open: boolean;
   category: CmsCategory | null;
+  siblingMetaTitles?: string[];
   onClose: () => void;
   onSave: (state: CategoryFormState) => Promise<void>;
   isSaving: boolean;
@@ -24,6 +25,7 @@ type CategoryFormModalProps = {
 export function CategoryFormModal({
   open,
   category,
+  siblingMetaTitles = [],
   onClose,
   onSave,
   isSaving,
@@ -182,6 +184,16 @@ export function CategoryFormModal({
         keywords={formState.keywords}
         ogTitle={formState.ogTitle}
         ogDescription={formState.ogDescription}
+        canonicalUrl={formState.canonicalUrl}
+        ogImageUrl={formState.ogImageUrl}
+        robotsNoindex={formState.robotsNoindex}
+        sitemapPriority={formState.sitemapPriority === "" ? null : Number(formState.sitemapPriority)}
+        sitemapChangefreq={(formState.sitemapChangefreq || "") as "" | "always" | "hourly" | "daily" | "weekly" | "monthly" | "yearly" | "never"}
+        entityName={formState.name}
+        entitySlug={formState.slug}
+        entityType="category"
+        siblingMetaTitles={siblingMetaTitles}
+        structuredDataOverrides={formState.structuredDataOverrides}
         onChange={(field, value) => handleChange(field as keyof CategoryFormState, value)}
         onGenerate={handleGenerateSeo}
         isGenerating={isGeneratingSeo}

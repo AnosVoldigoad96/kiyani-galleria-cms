@@ -7,6 +7,12 @@ export type SeoFormFields = {
   keywords: string;
   ogTitle: string;
   ogDescription: string;
+  canonicalUrl: string;
+  ogImageUrl: string;
+  robotsNoindex: boolean;
+  sitemapPriority: string;
+  sitemapChangefreq: string;
+  structuredDataOverrides: string;
 };
 
 export type CategoryFormState = {

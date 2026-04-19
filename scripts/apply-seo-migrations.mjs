@@ -137,6 +137,59 @@ async function main() {
   // For simplicity we reload the metadata — cheap and guaranteed to pick up new cols.
   await metadata("reload_metadata", { reload_remote_schemas: false, reload_sources: true }, "reload metadata (picks up new columns)");
 
+  // Step 4.5: extend existing `public` select permissions on products /
+  // categories / subcategories so the new SEO columns are queryable from
+  // the anonymous storefront (sitemap, PDP, category pages).
+  const newSeoColumns = [
+    "canonical_url",
+    "og_image_url",
+    "robots_noindex",
+    "sitemap_priority",
+    "sitemap_changefreq",
+    "structured_data_overrides",
+  ];
+  const metaExport = await hasura("/v1/metadata", { type: "export_metadata", args: {} });
+  const source = metaExport.body?.sources?.[0] || metaExport.body?.metadata?.sources?.[0];
+  for (const tableName of ["products", "categories", "subcategories"]) {
+    const table = source?.tables?.find((t) => t.table?.name === tableName);
+    const publicPerm = table?.select_permissions?.find((p) => p.role === "public");
+    if (!publicPerm) {
+      console.log(`→ metadata: no public select permission on ${tableName} — skipping extension`);
+      continue;
+    }
+    const currentColumns = Array.isArray(publicPerm.permission?.columns)
+      ? publicPerm.permission.columns
+      : [];
+    const extended = Array.from(new Set([...currentColumns, ...newSeoColumns])).sort();
+    if (extended.length === currentColumns.length) {
+      console.log(`→ metadata: ${tableName} public select already has SEO columns — ok`);
+      continue;
+    }
+    await metadata(
+      "pg_drop_select_permission",
+      { source: "default", table: { schema: "public", name: tableName }, role: "public" },
+      `drop stale public select on ${tableName}`,
+    );
+    await metadata(
+      "pg_create_select_permission",
+      {
+        source: "default",
+        table: { schema: "public", name: tableName },
+        role: "public",
+        permission: {
+          columns: extended,
+          filter: publicPerm.permission.filter ?? {},
+          allow_aggregations: publicPerm.permission.allow_aggregations ?? false,
+          ...(publicPerm.permission.limit !== undefined
+            ? { limit: publicPerm.permission.limit }
+            : {}),
+        },
+      },
+      `recreate public select on ${tableName} with SEO columns`,
+      { allowBenign: false },
+    );
+  }
+
   // Step 5: public SELECT permission on brand_settings (whitelisted keys)
   const publicSelectArgs = {
     source: "default",
@@ -170,7 +223,7 @@ async function main() {
     console.log("→ metadata: pg_create_select_permission (public, brand_settings)… ok");
   } else {
     const msg = create.body?.error || create.body?.message || JSON.stringify(create.body);
-    if (/already exists/i.test(msg)) {
+    if (/already exists|already defined/i.test(msg)) {
       console.log("→ metadata: existing public permission found — dropping + recreating…");
       await metadata(
         "pg_drop_select_permission",

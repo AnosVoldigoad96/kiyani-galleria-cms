@@ -166,6 +166,7 @@ export function productToFormState(
     isDealOfDay: product?.tags.dealOfDay ?? false,
     imageUrl: product?.imageUrl ?? "",
     imageAlt: product?.imageAlt ?? product?.imageLabel ?? "",
+    videoUrl: product?.videoUrl ?? "",
     featuresText: featuresToText(product?.features),
     metaTitle: product?.metaTitle ?? "",
     metaDescription: product?.metaDescription ?? "",

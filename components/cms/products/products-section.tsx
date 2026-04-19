@@ -13,6 +13,7 @@ import {
   deleteProduct,
   updateProduct,
   uploadProductImage,
+  uploadProductVideo,
   type ProductPayload,
 } from "./products-api";
 import { ConfirmDeleteModal } from "./confirm-delete-modal";
@@ -93,7 +94,7 @@ export function ProductsSection({
     setProductModalOpen(true);
   };
 
-  const handleSaveProduct = async (state: ProductFormState, imageFile: File | null) => {
+  const handleSaveProduct = async (state: ProductFormState, imageFile: File | null, videoFile: File | null) => {
     if (!state.name.trim()) {
       setError("Product name is required.");
       return;
@@ -123,6 +124,23 @@ export function ProductsSection({
         imageUrl = upload.url;
       }
 
+      let videoUrl = state.videoUrl ? state.videoUrl.trim() : null;
+
+      if (videoFile) {
+        // Delete old video if replacing
+        if (productEditor?.videoUrl) {
+          const oldVideoFileId = extractFileId(productEditor.videoUrl);
+          if (oldVideoFileId) {
+            await deleteProductImage(oldVideoFileId).catch(() => {});
+          }
+        }
+        const videoUpload = await uploadProductVideo(videoFile);
+        videoUrl = videoUpload.url;
+      } else if (!state.videoUrl) {
+        // User removed the video
+        videoUrl = null;
+      }
+
       const payload: ProductPayload = {
         sku: state.sku.trim() || generateSku(products),
         name: state.name.trim(),
@@ -132,6 +150,7 @@ export function ProductsSection({
         subcategory_id: state.subcategoryId || null,
         image_url: imageUrl,
         image_alt: state.imageAlt ? state.imageAlt.trim() : null,
+        video_url: videoUrl,
         price_pkr: Number(state.pricePkr || 0),
         our_price_pkr: Number(state.ourPricePkr || 0),
         rating: Number(state.rating || 0),

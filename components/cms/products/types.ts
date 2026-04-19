@@ -54,5 +54,6 @@ export type ProductFormState = {
   isDealOfDay: boolean;
   imageUrl: string;
   imageAlt: string;
+  videoUrl: string;
   featuresText: string;
 } & SeoFormFields;

@@ -23,7 +23,7 @@ type ProductFormModalProps = {
   defaultSku?: string;
   siblingMetaTitles?: string[];
   onClose: () => void;
-  onSave: (state: ProductFormState, imageFile: File | null) => Promise<void>;
+  onSave: (state: ProductFormState, imageFile: File | null, videoFile: File | null) => Promise<void>;
   isSaving: boolean;
   error: string | null;
 };
@@ -46,6 +46,7 @@ export function ProductFormModal({
     productToFormState(product, fallbackCategoryId),
   );
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isGeneratingSeo, setIsGeneratingSeo] = useState(false);
   const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
@@ -123,6 +124,7 @@ export function ProductFormModal({
       }
       setFormState(initial);
       setImageFile(null);
+      setVideoFile(null);
       setPreviewUrl(null);
       slugTouched.current = Boolean(product);
     }
@@ -168,7 +170,7 @@ export function ProductFormModal({
   };
 
   const handleSubmit = async () => {
-    await onSave(formState, imageFile);
+    await onSave(formState, imageFile, videoFile);
   };
 
   const inputClass =
@@ -447,6 +449,30 @@ export function ProductFormModal({
                 className={`${inputClass} !py-1`}
               />
             </label>
+            <label className="block">
+              <span className={labelClass}>{formState.videoUrl ? "Replace hover video" : "Upload hover video"}</span>
+              <input
+                type="file"
+                accept="video/webm,video/mp4"
+                onChange={(event) => setVideoFile(event.target.files?.[0] ?? null)}
+                className={`${inputClass} !py-1`}
+              />
+              <p className="mt-1 text-[10px] text-[var(--muted-foreground)]">
+                WebM recommended (lighter). Plays on product card hover.
+              </p>
+            </label>
+            {formState.videoUrl && !videoFile && (
+              <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                <span>Video attached</span>
+                <button
+                  type="button"
+                  onClick={() => setFormState((prev) => ({ ...prev, videoUrl: "" }))}
+                  className="ml-auto text-red-500 hover:text-red-700 text-[10px] font-bold uppercase"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

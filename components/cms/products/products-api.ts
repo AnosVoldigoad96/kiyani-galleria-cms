@@ -44,6 +44,7 @@ export type ProductPayload = {
   subcategory_id: string | null;
   image_url: string | null;
   image_alt: string | null;
+  video_url: string | null;
   price_pkr: number;
   our_price_pkr: number;
   rating: number;
@@ -402,6 +403,32 @@ export async function deleteProductImage(fileId: string) {
     throw new Error(message);
   }
   // Success — don't try to parse body (may be empty)
+}
+
+export async function uploadProductVideo(file: File) {
+  const accessToken = await getAccessToken();
+
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch("/api/upload-image", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: formData,
+  });
+
+  const body = await response.json();
+
+  if (!response.ok) {
+    throw new Error(body.error || "Video upload failed.");
+  }
+
+  return {
+    fileId: body.fileId as string,
+    url: body.url as string,
+  };
 }
 
 /** Extract the Nhost file ID from a storage URL */

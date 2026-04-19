@@ -48,6 +48,7 @@ export type CmsProduct = {
   imageLabel: string;
   imageUrl?: string | null;
   imageAlt?: string | null;
+  videoUrl?: string | null;
   categoryId: string;
   category: string;
   subcategoryId?: string | null;
@@ -189,6 +190,7 @@ export type CmsPaymentMethod = {
   accountNumber: string;
   bankName: string;
   instructions: string;
+  cashAccountCode: string | null;
   isActive: boolean;
   sortOrder: number;
 };
@@ -237,6 +239,7 @@ export type CmsLedgerAccount = {
   code: string;
   name: string;
   category: "Asset" | "Liability" | "Equity" | "Revenue" | "Expense" | "COGS";
+  balancePkrValue: number;
   balancePkr: string;
   entryCount: number;
   status: "Active" | "Inactive";
@@ -244,19 +247,26 @@ export type CmsLedgerAccount = {
 
 export type CmsJournalLine = {
   id: string;
+  accountId: string;
   accountCode: string;
   accountName: string;
+  accountCategory: "Asset" | "Liability" | "Equity" | "Revenue" | "Expense" | "COGS";
   description: string;
   side: "Debit" | "Credit";
+  debitPkrValue: number;
+  creditPkrValue: number;
   amountPkr: string;
 };
 
 export type CmsJournalEntry = {
   id: string;
   journalNo: string;
+  entryDateValue: string;
   entryDate: string;
+  referenceType: string | null;
   reference: string;
   memo: string;
+  statusCode: "draft" | "posted" | "void";
   status: "Draft" | "Posted" | "Voided";
   debitPkr: string;
   creditPkr: string;

@@ -71,6 +71,7 @@ type CmsGraphqlResponse = {
     name: string;
     image_url: string | null;
     image_alt: string | null;
+    video_url: string | null;
     description: string;
     price_pkr: number;
     our_price_pkr: number;
@@ -231,6 +232,7 @@ type CmsGraphqlResponse = {
     account_number: string | null;
     bank_name: string | null;
     instructions: string | null;
+    cash_account_code: string | null;
     is_active: boolean;
     sort_order: number;
   }>;
@@ -303,6 +305,7 @@ const CMS_QUERY = `
       name
       image_url
       image_alt
+      video_url
       description
       price_pkr
       our_price_pkr
@@ -463,6 +466,7 @@ const CMS_QUERY = `
       account_number
       bank_name
       instructions
+      cash_account_code
       is_active
       sort_order
     }
@@ -717,6 +721,7 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     imageLabel: product.image_alt || product.name,
     imageUrl: product.image_url,
     imageAlt: product.image_alt,
+    videoUrl: product.video_url,
     categoryId: product.category_id,
     category: categoryMap.get(product.category_id)?.name ?? "Unassigned",
     subcategoryId: product.subcategory_id,
@@ -846,8 +851,16 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     return c === "asset" || c === "expense" || c === "cogs";
   };
 
+  // Only posted journal entries affect the ledger. Draft and void entries are excluded.
+  const postedJournalIds = new Set(
+    data.journal_entries.filter((entry) => entry.status === "posted").map((entry) => entry.id),
+  );
+  const postedJournalLines = data.journal_lines.filter((line) =>
+    postedJournalIds.has(line.journal_entry_id),
+  );
+
   const ledgerAccounts: CmsLedgerAccount[] = data.accounting_accounts.map((account) => {
-    const relatedLines = data.journal_lines.filter((line) => line.account_id === account.id);
+    const relatedLines = postedJournalLines.filter((line) => line.account_id === account.id);
     const rawBalance = relatedLines.reduce(
       (sum, line) => sum + Number(line.debit_pkr ?? 0) - Number(line.credit_pkr ?? 0),
       0,
@@ -862,6 +875,7 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
       category: account.category.toUpperCase() === "COGS"
         ? "COGS"
         : (titleCase(account.category) as CmsLedgerAccount["category"]),
+      balancePkrValue: balance,
       balancePkr: formatPkr(balance),
       entryCount: relatedLines.length,
       status: account.is_active ? "Active" : "Inactive",
@@ -934,6 +948,11 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     };
   });
 
+  const toAccountCategory = (raw: string): CmsJournalLine["accountCategory"] =>
+    raw.toUpperCase() === "COGS"
+      ? "COGS"
+      : (titleCase(raw) as CmsJournalLine["accountCategory"]);
+
   const journalEntries: CmsJournalEntry[] = data.journal_entries.map((entry) => {
     const lines = (linesByJournal.get(entry.id) ?? []).map((line): CmsJournalLine => {
       const account = data.accounting_accounts.find((item) => item.id === line.account_id);
@@ -942,10 +961,14 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
 
       return {
         id: line.id,
+        accountId: line.account_id,
         accountCode: account?.code ?? "N/A",
         accountName: account?.name ?? "Unknown account",
+        accountCategory: account ? toAccountCategory(account.category) : "Asset",
         description: line.description ?? "Journal line",
         side: debit > 0 ? "Debit" : "Credit",
+        debitPkrValue: debit,
+        creditPkrValue: credit,
         amountPkr: formatPkr(debit > 0 ? debit : credit),
       };
     });
@@ -962,9 +985,17 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     return {
       id: entry.id,
       journalNo: entry.journal_no,
+      entryDateValue: formatDateValue(entry.entry_date),
       entryDate: formatDateLabel(entry.entry_date),
+      referenceType: entry.reference_type ?? null,
       reference: entry.reference_type ? titleCase(entry.reference_type) : "Manual",
       memo: entry.memo ?? "No memo attached",
+      statusCode:
+        entry.status === "posted"
+          ? "posted"
+          : entry.status === "void"
+            ? "void"
+            : "draft",
       status:
         entry.status === "posted"
           ? "Posted"
@@ -1146,6 +1177,7 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
       accountNumber: pm.account_number ?? "",
       bankName: pm.bank_name ?? "",
       instructions: pm.instructions ?? "",
+      cashAccountCode: pm.cash_account_code ?? null,
       isActive: pm.is_active,
       sortOrder: pm.sort_order,
     })),

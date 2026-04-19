@@ -65,6 +65,8 @@ export type CmsProduct = {
   discountEnabled: boolean;
   discountPercent: number;
   stock: string;
+  stockQuantity: number;
+  stockLabel: string | null;
   status: "Live" | "Draft" | "Archived";
   tags: {
     trending: boolean;

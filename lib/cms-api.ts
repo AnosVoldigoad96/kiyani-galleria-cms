@@ -232,7 +232,9 @@ type CmsGraphqlResponse = {
     account_number: string | null;
     bank_name: string | null;
     instructions: string | null;
-    cash_account_code: string | null;
+    // cash_account_code is fetched lazily in invoice-api (requires the accounting
+    // schema migration to have been applied).
+    cash_account_code?: string | null;
     is_active: boolean;
     sort_order: number;
   }>;
@@ -747,6 +749,8 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     stock:
       product.stock_label ||
       `${product.stock_quantity} ${product.stock_quantity === 1 ? "unit" : "units"}`,
+    stockQuantity: Number(product.stock_quantity ?? 0),
+    stockLabel: product.stock_label ?? null,
     status:
       product.status === "live"
         ? "Live"

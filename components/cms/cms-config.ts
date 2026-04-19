@@ -1,6 +1,7 @@
 import {
   BookOpenText,
   FolderKanban,
+  Layers,
   LayoutDashboard,
   MessageSquare,
   Package,
@@ -13,6 +14,7 @@ import {
 export type SectionId =
   | "dashboard"
   | "products"
+  | "categories"
   | "accounting"
   | "reviews"
   | "orders"
@@ -24,6 +26,7 @@ export type SectionId =
 export const sections = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, count: "04" },
   { id: "products", label: "Products", icon: Package, count: "84" },
+  { id: "categories", label: "Categories", icon: Layers, count: "06" },
   { id: "accounting", label: "Accounting", icon: BookOpenText, count: "24" },
   { id: "reviews", label: "Reviews", icon: MessageSquare, count: "18" },
   { id: "orders", label: "Orders", icon: ShoppingBag, count: "36" },
@@ -40,7 +43,7 @@ export const sections = [
 
 export const navGroups = [
   { label: "Overview", ids: ["dashboard"] },
-  { label: "Commerce", ids: ["products", "orders", "requests", "accounting"] },
+  { label: "Commerce", ids: ["products", "categories", "orders", "requests", "accounting"] },
   { label: "Community", ids: ["reviews", "users"] },
   { label: "Settings", ids: ["brand", "seo"] },
 ] as const satisfies ReadonlyArray<{
@@ -62,8 +65,17 @@ export function sectionCopy(section: SectionId) {
     return {
       title: "Catalog Management",
       description:
-        "Control inventory, pricing, and feature tags across products and categories.",
+        "Control inventory, pricing, and feature tags across your products.",
       action: "New product",
+    };
+  }
+
+  if (section === "categories") {
+    return {
+      title: "Collections & Categories",
+      description:
+        "Organize products into categories and subcategories for easy browsing.",
+      action: "New category",
     };
   }
 

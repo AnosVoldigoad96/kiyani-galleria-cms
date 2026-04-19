@@ -8,6 +8,7 @@ import { sections, type SectionId } from "@/components/cms/cms-config";
 import { CmsHeader } from "@/components/cms/cms-header";
 import { CmsSidebar } from "@/components/cms/cms-sidebar";
 import { BrandSection } from "@/components/cms/sections/brand-section";
+import { CategoriesSection } from "@/components/cms/sections/categories-section";
 import { SeoSettingsClient } from "@/components/cms/seo/seo-settings-client";
 import { AccountingSection } from "@/components/cms/sections/accounting-section";
 import { DashboardSection } from "@/components/cms/sections/dashboard-section";
@@ -130,6 +131,14 @@ export function CmsDashboard() {
         onRefresh={refetch}
       />
     );
+  } else if (activeSection === "categories") {
+    sectionView = (
+      <CategoriesSection
+        categories={data?.categories ?? []}
+        subcategories={data?.subcategories ?? []}
+        onRefresh={refetch}
+      />
+    );
   } else if (activeSection === "accounting") {
     sectionView = (
       <AccountingSection
@@ -196,6 +205,7 @@ export function CmsDashboard() {
           counts={{
             dashboard: data?.stats.length ?? 0,
             products: data?.products.length ?? 0,
+            categories: (data?.categories.length ?? 0) + (data?.subcategories.length ?? 0),
             accounting: data?.invoices.length ?? 0,
             reviews: data?.reviews.length ?? 0,
             orders: data?.orders.length ?? 0,

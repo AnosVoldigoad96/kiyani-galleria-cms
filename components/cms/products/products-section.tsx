@@ -7,31 +7,20 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { toast } from "sonner";
 
 import {
-  createCategory,
   createProduct,
-  createSubcategory,
   deleteProductImage,
   extractFileId,
-  deleteCategory,
   deleteProduct,
-  deleteSubcategory,
-  updateCategory,
   updateProduct,
-  updateSubcategory,
   uploadProductImage,
-  type CategoryPayload,
   type ProductPayload,
-  type SubcategoryPayload,
 } from "./products-api";
-import { CategoryFormModal } from "./category-form-modal";
-import { CategorySubcategoryTable } from "./category-subcategory-table";
 import { ConfirmDeleteModal } from "./confirm-delete-modal";
 import { ProductFormModal } from "./product-form-modal";
 import { ProductList } from "./product-list";
-import { SubcategoryFormModal } from "./subcategory-form-modal";
-import type { CategoryFormState, ProductFormState, SubcategoryFormState } from "./types";
+import type { ProductFormState } from "./types";
 import type { SeoFormFields } from "./types";
-import { generateSku, nextSortOrder, parseFeatures, slugify } from "./utils";
+import { generateSku, parseFeatures, slugify } from "./utils";
 
 function seoPayloadFromForm(state: SeoFormFields) {
   const priority =
@@ -45,8 +34,6 @@ function seoPayloadFromForm(state: SeoFormFields) {
     try {
       structuredOverrides = JSON.parse(raw);
     } catch {
-      // Invalid JSON → persist null; the CMS editor should surface the parse
-      // error before save but we defensively fall back here.
       structuredOverrides = null;
     }
   }
@@ -73,11 +60,6 @@ type ProductsSectionProps = {
   onRefresh?: () => void;
 };
 
-type DeleteTarget =
-  | { type: "category"; item: CmsCategory }
-  | { type: "subcategory"; item: CmsSubcategory }
-  | { type: "product"; item: CmsProduct };
-
 export function ProductsSection({
   categories,
   subcategories,
@@ -85,36 +67,16 @@ export function ProductsSection({
   onRefresh,
 }: ProductsSectionProps) {
   const { user } = useAuth();
-  const [categoryEditor, setCategoryEditor] = useState<CmsCategory | null>(null);
-  const [subcategoryEditor, setSubcategoryEditor] = useState<CmsSubcategory | null>(null);
   const [productEditor, setProductEditor] = useState<CmsProduct | null>(null);
   const [productMode, setProductMode] = useState<"create" | "edit" | "clone">("create");
-  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<CmsProduct | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
-  const [subcategoryModalOpen, setSubcategoryModalOpen] = useState(false);
   const [productModalOpen, setProductModalOpen] = useState(false);
-  const [subcategoryFallbackCategoryId, setSubcategoryFallbackCategoryId] = useState<
-    string | undefined
-  >(undefined);
 
   const defaultCategoryId = useMemo(() => categories[0]?.id ?? "", [categories]);
 
   const resetError = () => setError(null);
-
-  const openCategoryModal = (category?: CmsCategory) => {
-    resetError();
-    setCategoryEditor(category ?? null);
-    setCategoryModalOpen(true);
-  };
-
-  const openSubcategoryModal = (subcategory?: CmsSubcategory, fallbackCategoryId?: string) => {
-    resetError();
-    setSubcategoryFallbackCategoryId(fallbackCategoryId);
-    setSubcategoryEditor(subcategory ?? null);
-    setSubcategoryModalOpen(true);
-  };
 
   const openProductModal = (mode: "create" | "edit" | "clone", product?: CmsProduct) => {
     resetError();
@@ -129,87 +91,6 @@ export function ProductsSection({
       setProductEditor(product ?? null);
     }
     setProductModalOpen(true);
-  };
-
-  const handleSaveCategory = async (state: CategoryFormState) => {
-    if (!state.name.trim()) {
-      setError("Category name is required.");
-      return;
-    }
-
-    const payload: CategoryPayload = {
-      name: state.name.trim(),
-      slug: (state.slug || slugify(state.name)).trim(),
-      description: state.description ? state.description.trim() : null,
-      sort_order: Number(state.sortOrder || 0) || (categoryEditor ? 0 : Number(nextSortOrder(categories))),
-      is_visible: state.isVisible,
-      ...seoPayloadFromForm(state),
-    };
-
-    setIsSaving(true);
-    setError(null);
-    try {
-      if (categoryEditor) {
-        await updateCategory(categoryEditor.id, payload);
-        toast.success("Category updated.");
-      } else {
-        await createCategory(payload);
-        toast.success("Category created.");
-      }
-      setCategoryModalOpen(false);
-      setCategoryEditor(null);
-      onRefresh?.();
-    } catch (caughtError) {
-      const message =
-        caughtError instanceof Error ? caughtError.message : "Failed to save category.";
-      setError(message);
-      toast.error(message);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleSaveSubcategory = async (state: SubcategoryFormState) => {
-    if (!state.name.trim()) {
-      setError("Subcategory name is required.");
-      return;
-    }
-    if (!state.categoryId) {
-      setError("Select a category for this subcategory.");
-      return;
-    }
-
-    const payload: SubcategoryPayload = {
-      name: state.name.trim(),
-      slug: (state.slug || slugify(state.name)).trim(),
-      description: state.description ? state.description.trim() : null,
-      sort_order: Number(state.sortOrder || 0) || (subcategoryEditor ? 0 : Number(nextSortOrder(subcategories))),
-      status: state.status,
-      category_id: state.categoryId,
-      ...seoPayloadFromForm(state),
-    };
-
-    setIsSaving(true);
-    setError(null);
-    try {
-      if (subcategoryEditor) {
-        await updateSubcategory(subcategoryEditor.id, payload);
-        toast.success("Subcategory updated.");
-      } else {
-        await createSubcategory(payload);
-        toast.success("Subcategory created.");
-      }
-      setSubcategoryModalOpen(false);
-      setSubcategoryEditor(null);
-      onRefresh?.();
-    } catch (caughtError) {
-      const message =
-        caughtError instanceof Error ? caughtError.message : "Failed to save subcategory.";
-      setError(message);
-      toast.error(message);
-    } finally {
-      setIsSaving(false);
-    }
   };
 
   const handleSaveProduct = async (state: ProductFormState, imageFile: File | null) => {
@@ -232,7 +113,6 @@ export function ProductsSection({
       let imageUrl = state.imageUrl ? state.imageUrl.trim() : null;
 
       if (imageFile) {
-        // Delete old image if replacing
         if (productEditor?.imageUrl) {
           const oldFileId = extractFileId(productEditor.imageUrl);
           if (oldFileId) {
@@ -294,28 +174,18 @@ export function ProductsSection({
   };
 
   const handleDelete = async () => {
-    if (!deleteTarget) {
-      return;
-    }
+    if (!deleteTarget) return;
 
     setIsSaving(true);
     setError(null);
     try {
-      if (deleteTarget.type === "category") {
-        await deleteCategory(deleteTarget.item.id);
-        toast.success("Category deleted.");
-      } else if (deleteTarget.type === "subcategory") {
-        await deleteSubcategory(deleteTarget.item.id);
-        toast.success("Subcategory deleted.");
-      } else {
-        await deleteProduct(deleteTarget.item.productId);
-        toast.success("Product deleted.");
-      }
+      await deleteProduct(deleteTarget.productId);
+      toast.success("Product deleted.");
       setDeleteTarget(null);
       onRefresh?.();
     } catch (caughtError) {
       const message =
-        caughtError instanceof Error ? caughtError.message : "Failed to delete record.";
+        caughtError instanceof Error ? caughtError.message : "Failed to delete product.";
       setError(message);
       toast.error(message);
     } finally {
@@ -323,32 +193,8 @@ export function ProductsSection({
     }
   };
 
-  const deleteTitle = deleteTarget
-    ? `Delete ${deleteTarget.type === "product" ? "product" : deleteTarget.type}`
-    : "Delete item";
-  const deleteDescription = deleteTarget
-    ? `You're about to delete "${deleteTarget.item.name}".`
-    : "You're about to delete this item.";
-
   return (
     <div className="space-y-6">
-      <CategorySubcategoryTable
-        categories={categories}
-        subcategories={subcategories}
-        onCreateCategory={() => openCategoryModal()}
-        onEditCategory={(category) => openCategoryModal(category)}
-        onDeleteCategory={(category) => {
-          resetError();
-          setDeleteTarget({ type: "category", item: category });
-        }}
-        onCreateSubcategory={(categoryId) => openSubcategoryModal(undefined, categoryId)}
-        onEditSubcategory={(subcategory) => openSubcategoryModal(subcategory)}
-        onDeleteSubcategory={(subcategory) => {
-          resetError();
-          setDeleteTarget({ type: "subcategory", item: subcategory });
-        }}
-      />
-
       <ProductList
         products={products}
         onCreate={() => openProductModal("create")}
@@ -356,7 +202,7 @@ export function ProductsSection({
         onClone={(product) => openProductModal("clone", product)}
         onDelete={(product) => {
           resetError();
-          setDeleteTarget({ type: "product", item: product });
+          setDeleteTarget(product);
         }}
         onView={(product) => {
           if (product.imageUrl) {
@@ -365,37 +211,6 @@ export function ProductsSection({
         }}
       />
 
-      <CategoryFormModal
-        open={categoryModalOpen}
-        category={categoryEditor}
-        siblingMetaTitles={categories
-          .filter((c) => c.id !== categoryEditor?.id && c.metaTitle)
-          .map((c) => (c.metaTitle ?? "").toLowerCase())}
-        onClose={() => {
-          setCategoryModalOpen(false);
-          resetError();
-        }}
-        onSave={handleSaveCategory}
-        isSaving={isSaving}
-        error={error}
-      />
-      <SubcategoryFormModal
-        open={subcategoryModalOpen}
-        categories={categories}
-        subcategory={subcategoryEditor}
-        fallbackCategoryId={subcategoryFallbackCategoryId ?? defaultCategoryId}
-        siblingMetaTitles={subcategories
-          .filter((s) => s.id !== subcategoryEditor?.id && s.metaTitle)
-          .map((s) => (s.metaTitle ?? "").toLowerCase())}
-        onClose={() => {
-          setSubcategoryModalOpen(false);
-          setSubcategoryFallbackCategoryId(undefined);
-          resetError();
-        }}
-        onSave={handleSaveSubcategory}
-        isSaving={isSaving}
-        error={error}
-      />
       <ProductFormModal
         open={productModalOpen}
         product={productEditor}
@@ -417,8 +232,8 @@ export function ProductsSection({
       />
       <ConfirmDeleteModal
         open={Boolean(deleteTarget)}
-        title={deleteTitle}
-        description={deleteDescription}
+        title="Delete product"
+        description={deleteTarget ? `You're about to delete "${deleteTarget.name}".` : "You're about to delete this product."}
         onClose={() => {
           setDeleteTarget(null);
           resetError();

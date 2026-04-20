@@ -21,7 +21,6 @@ export type SeoPayload = {
 export type CategoryPayload = {
   name: string;
   slug: string;
-  description: string | null;
   sort_order: number;
   is_visible: boolean;
 } & SeoPayload;
@@ -29,7 +28,6 @@ export type CategoryPayload = {
 export type SubcategoryPayload = {
   name: string;
   slug: string;
-  description: string | null;
   sort_order: number;
   status: SubcategoryStatus;
   category_id: string;
@@ -477,7 +475,7 @@ export async function generateSeo(input: GenerateSeoInput): Promise<GenerateSeoR
 }
 
 export async function generateDescription(input: {
-  type: "product" | "category" | "subcategory";
+  type: "product";
   name: string;
   category?: string;
 }): Promise<string> {

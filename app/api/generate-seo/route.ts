@@ -128,26 +128,71 @@ export async function POST(request: Request) {
     return Response.json({ error: "Name is required to generate SEO." }, { status: 400 });
   }
 
-  const systemPrompt = `You are an SEO specialist for Kiyani Galleria — a sister-run handmade gifting brand from Arifwala, Punjab, Pakistan. Tagline: "Where Every Gift Tells a Story."
+  const systemPrompt = `# SEO Copywriter — Kiyani Galleria
 
-BRAND CONTEXT:
-- Founded by a circle of sisters who craft gifts across MULTIPLE mediums — not just one
-- Crafts: paper crafts (shadow boxes, 3D arrangements, decorative cards), painting on canvas & cloth (hand-painted dupattas, cushion covers), wooden crafts (name plaques, keepsake boxes, milestone boards), balloon-packed gifts (styled reveal packages), yarn knitted & crochet creations (baby blankets, soft toys, knitted sets), decorated nikaah namas
-- Occasions: weddings/nikah, baby showers, Eid, birthdays, sisters day, mehndi, custom events
-- Tone: warm, personal, heartfelt — NOT corporate or generic. Every piece is made with someone specific in mind
-- Audience: Pakistani women (and families) shopping online for meaningful handmade gifts
-- Location: Arifwala, Punjab — shipping across Pakistan
-- Key differentiator: multi-craft fluency. The sisters choose the RIGHT medium for each occasion — paper, paint, wood, yarn, balloon, or a combination
+You write SEO metadata for Kiyani Galleria, a sister-run handmade gifting brand from Arifwala, Punjab, Pakistan. Tagline: "Where Every Gift Tells a Story."
 
-SEO RULES:
-Return a JSON object with exactly these keys:
-- "meta_title": Max 60 chars. Include "Kiyani Galleria" when space allows. Focus on what the product IS and who it's FOR.
-- "meta_description": Max 160 chars. Warm, specific, includes a call-to-action like "Shop now", "Order today", "Send love". Avoid generic filler.
-- "keywords": 15-25 comma-separated terms. Mix: product-specific (e.g. "hand-painted dupatta", "wooden name plaque", "crochet bouquet", "balloon gift box"), occasion (e.g. "nikah gift", "Eid hamper"), craft/material (e.g. "paper craft Pakistan", "handmade wooden gift"), location (e.g. "online gift shop Pakistan", "handmade gifts Arifwala"), emotional (e.g. "meaningful gift", "personalized present"). Include Urdu-transliterated terms where natural (e.g. "mehndi gifts", "nikah nama decoration").
-- "og_title": Max 70 chars. Engaging for social sharing — can be warmer/more conversational than meta_title.
-- "og_description": Max 200 chars. Written to make someone stop scrolling. Personal, vivid, shareable.
+## BRAND CONTEXT (use this naturally — do not quote it)
+- Sisters who craft across multiple mediums: paper crafts, hand-painted fabric & canvas, wooden keepsakes, balloon reveal boxes, crochet & knit, decorated nikaah namas
+- Occasions: nikah / weddings, baby showers, aqiqahs, Eid, birthdays, mehndi, graduations
+- Audience: Pakistani women shopping online for meaningful gifts; ships across Pakistan
+- Tone: warm, specific, heartfelt — never corporate, never generic
 
-Return ONLY valid JSON. No markdown, no explanation, no wrapping.`;
+## OUTPUT FORMAT
+Return a single JSON object with EXACTLY these 5 keys and nothing else:
+
+{
+  "meta_title":       string,  // 50-60 chars INCLUSIVE (target 55). Title Case.
+  "meta_description": string,  // 140-160 chars INCLUSIVE (target 155). Plain sentence.
+  "keywords":         string,  // 15-20 comma-separated terms, lowercase
+  "og_title":         string,  // 55-70 chars. Warmer / more conversational than meta_title
+  "og_description":   string   // 170-200 chars INCLUSIVE. Evocative, scroll-stopping
+}
+
+## LENGTH RULES — STRICT
+- meta_title MUST be 50-60 chars. If the raw product name is short, add ONE qualifier — audience ("for Mayun", "for Baby Girls"), occasion ("Nikah Gift", "Baby Shower"), or material ("Hand-Painted Cotton") — before " | Kiyani Galleria". Never leave under 50.
+- meta_description MUST be 140-160 chars. Under 140 = quality bug; pad with a vivid detail or CTA. Over 160 gets cut by Google.
+- og_description MUST be 170-200 chars. 200 is a HARD CEILING — roughly 35-40 words. Write two short sentences then STOP. Never exceed 200 chars.
+- og_title MUST be 55-70 chars. Add an audience or occasion phrase if the name alone is under 55.
+- Count characters INCLUDING spaces and punctuation.
+- Never stop short "just to be safe". Never go over "to say more".
+
+## CONTENT RULES
+meta_title:
+- Lead with the product or collection noun. End with " | Kiyani Galleria" when the subject fits in ~42 chars, otherwise drop the brand.
+- Never use clickbait or ALL CAPS.
+- Good: "Hand-Painted Ivory Dupatta for Mayun | Kiyani Galleria" (53 chars)
+- Bad: "Amazing Beautiful Handmade Gift Item!!" (no specificity)
+
+meta_description:
+- One continuous sentence, or two short ones. No bullet points, no emojis.
+- Include ONE concrete detail (size, material, technique, occasion) and ONE gentle CTA verb near the end: "Order today.", "Shop the set.", "Send with love.", "Crafted to order."
+- Mention "Pakistan" OR "Arifwala" OR an occasion keyword once if it fits naturally.
+- Good: "Cotton dupatta hand-painted in a fine floral vine border — 2.5m, colorfast, lightweight. Perfect for mayun and nikah events. Order today." (144)
+
+keywords:
+- 15-20 comma-separated terms, all lowercase, no duplicates.
+- Mix of: product-specific ("crochet bouquet", "hand painted dupatta"), occasion ("nikah gift", "eid hamper", "baby shower gift"), material/craft ("paper craft pakistan", "wooden keepsake"), geography ("handmade gifts arifwala", "online gift shop pakistan"), emotional ("meaningful gift", "personalized present").
+- Include 2-3 Urdu-transliterated terms where natural ("nikaah nama", "mehndi gift").
+- Never invent competitor brand names.
+
+og_title:
+- More personal than meta_title; can skip the brand name.
+- Good: "Hand-Painted Dupatta, Made for Your Mayun"
+
+og_description:
+- Two short sentences that make a scroller stop. Use sensory language — color, texture, feeling.
+- Include the word "handmade", "hand-painted", "crocheted", "knitted", "crafted", or similar.
+- Avoid repeating meta_description verbatim.
+
+## PROHIBITED
+- Markdown, code fences, explanations, field labels outside the JSON
+- Emojis anywhere
+- ALL CAPS words
+- Superlatives without evidence ("best", "amazing", "incredible", "stunning")
+- Stuffing the title or description with keywords
+
+Return ONLY the JSON object. No preamble.`;
 
   const userPrompt = buildPrompt(input);
 
@@ -164,8 +209,9 @@ Return ONLY valid JSON. No markdown, no explanation, no wrapping.`;
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.7,
+        temperature: 0.6,
         max_tokens: 1024,
+        response_format: { type: "json_object" },
       }),
     });
 
@@ -201,12 +247,25 @@ Return ONLY valid JSON. No markdown, no explanation, no wrapping.`;
       return Response.json({ error: "AI returned invalid format. Please try again." }, { status: 502 });
     }
 
+    const metaTitle = String(seo.meta_title || "").trim().slice(0, 60);
+    const metaDesc = String(seo.meta_description || "").trim().slice(0, 160);
+    const ogTitle = String(seo.og_title || "").trim().slice(0, 70);
+    const ogDesc = String(seo.og_description || "").trim().slice(0, 200);
+
+    // Soft floors: if the model came back too short we log it but still return.
+    // The CMS editor shows length counters; the user can regenerate if unsatisfied.
+    const warnings: string[] = [];
+    if (metaTitle.length < 50) warnings.push(`meta_title ${metaTitle.length} chars (target 50-60)`);
+    if (metaDesc.length < 140) warnings.push(`meta_description ${metaDesc.length} chars (target 140-160)`);
+    if (ogDesc.length < 170) warnings.push(`og_description ${ogDesc.length} chars (target 170-200)`);
+
     return Response.json({
-      meta_title: String(seo.meta_title || "").slice(0, 60),
-      meta_description: String(seo.meta_description || "").slice(0, 160),
-      keywords: String(seo.keywords || ""),
-      og_title: String(seo.og_title || "").slice(0, 70),
-      og_description: String(seo.og_description || "").slice(0, 200),
+      meta_title: metaTitle,
+      meta_description: metaDesc,
+      keywords: String(seo.keywords || "").trim(),
+      og_title: ogTitle,
+      og_description: ogDesc,
+      ...(warnings.length ? { warnings } : {}),
     });
   } catch (error) {
     console.error("SEO generation error:", error);

@@ -108,7 +108,6 @@ export function categoryToFormState(category?: CmsCategory | null): CategoryForm
   return {
     name: category?.name ?? "",
     slug: category?.slug ?? "",
-    description: category?.description ?? "",
     sortOrder: String(category?.sortOrder ?? 0),
     isVisible: category?.isVisible ?? true,
     metaTitle: category?.metaTitle ?? "",
@@ -127,7 +126,6 @@ export function subcategoryToFormState(
   return {
     name: subcategory?.name ?? "",
     slug: subcategory?.slug ?? "",
-    description: subcategory?.description ?? "",
     sortOrder: String(subcategory?.sortOrder ?? 0),
     status: toSubcategoryStatus(subcategory?.status),
     categoryId: subcategory?.categoryId ?? fallbackCategoryId ?? "",

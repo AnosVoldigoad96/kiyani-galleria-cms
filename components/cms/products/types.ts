@@ -18,7 +18,6 @@ export type SeoFormFields = {
 export type CategoryFormState = {
   name: string;
   slug: string;
-  description: string;
   sortOrder: string;
   isVisible: boolean;
 } & SeoFormFields;
@@ -26,7 +25,6 @@ export type CategoryFormState = {
 export type SubcategoryFormState = {
   name: string;
   slug: string;
-  description: string;
   sortOrder: string;
   status: SubcategoryStatus;
   categoryId: string;

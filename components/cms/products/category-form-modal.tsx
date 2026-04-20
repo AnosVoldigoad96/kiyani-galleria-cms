@@ -6,8 +6,7 @@ import { CmsModal } from "@/components/cms/cms-modal";
 import { Button } from "@/components/ui/button";
 import type { CmsCategory } from "@/lib/cms-data";
 
-import { AiDescriptionButton } from "./ai-description-button";
-import { generateDescription, generateSeo } from "./products-api";
+import { generateSeo } from "./products-api";
 import { SeoFieldsSection } from "./seo-fields-section";
 import type { CategoryFormState } from "./types";
 import { categoryToFormState, slugify } from "./utils";
@@ -57,21 +56,7 @@ export function CategoryFormModal({
     });
   };
 
-  const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
   const [isGeneratingSeo, setIsGeneratingSeo] = useState(false);
-
-  const handleGenerateDescription = async () => {
-    if (!formState.name.trim()) return;
-    setIsGeneratingDesc(true);
-    try {
-      const desc = await generateDescription({ type: "category", name: formState.name });
-      setFormState((prev) => ({ ...prev, description: desc }));
-    } catch (err) {
-      console.error("Description generation failed:", err);
-    } finally {
-      setIsGeneratingDesc(false);
-    }
-  };
 
   const handleGenerateSeo = async () => {
     if (!formState.name.trim()) return;
@@ -80,7 +65,6 @@ export function CategoryFormModal({
       const result = await generateSeo({
         type: "category",
         name: formState.name,
-        description: formState.description || undefined,
       });
       setFormState((prev) => ({
         ...prev,
@@ -143,19 +127,6 @@ export function CategoryFormModal({
             placeholder="wedding-gifts"
           />
         </label>
-      </div>
-
-      <div className="block">
-        <span className="flex items-center gap-2">
-          <span className={labelClass}>Description</span>
-          <AiDescriptionButton onClick={handleGenerateDescription} isGenerating={isGeneratingDesc} />
-        </span>
-        <textarea
-          value={formState.description}
-          onChange={(event) => handleChange("description", event.target.value)}
-          className={`${inputClass} min-h-[80px]`}
-          placeholder="Short customer-facing category description."
-        />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">

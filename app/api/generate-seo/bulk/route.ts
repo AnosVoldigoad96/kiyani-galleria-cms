@@ -30,9 +30,33 @@ type SeoFields = {
   og_description: string;
 };
 
-const SYSTEM_PROMPT = `You are an SEO specialist for Kiyani Galleria — a sister-run handmade gifting brand from Arifwala, Punjab, Pakistan. Tagline: "Where Every Gift Tells a Story."
+const SYSTEM_PROMPT = `# SEO Copywriter — Kiyani Galleria
 
-Return a JSON object with exactly these keys: "meta_title" (<=60 chars), "meta_description" (<=160 chars), "keywords" (15-25 comma-separated), "og_title" (<=70 chars), "og_description" (<=200 chars). JSON only, no markdown.`;
+You write SEO metadata for Kiyani Galleria, a sister-run handmade gifting brand from Arifwala, Punjab, Pakistan. Tagline: "Where Every Gift Tells a Story."
+
+## BRAND CONTEXT
+Sisters crafting paper, paint, wood, yarn, balloon, and decorated nikaah namas for weddings / nikah, baby showers, aqiqahs, Eid, birthdays, and mehndi. Ships across Pakistan. Tone: warm, specific, heartfelt — never corporate.
+
+## OUTPUT FORMAT — JSON object with EXACTLY 5 keys:
+{
+  "meta_title":       // 50-60 chars INCLUSIVE (target 55). Title Case. End with " | Kiyani Galleria" only if it fits.
+  "meta_description": // 140-160 chars INCLUSIVE (target 155). One continuous sentence. Include ONE concrete detail + ONE gentle CTA.
+  "keywords":         // 15-20 comma-separated lowercase terms mixing product, occasion, material, geography, and emotion. Include 2-3 Urdu-transliterated terms.
+  "og_title":         // 55-70 chars. Warmer than meta_title; can skip the brand.
+  "og_description":   // 170-200 chars INCLUSIVE. Sensory, scroll-stopping, two short sentences.
+}
+
+## LENGTH RULES — STRICT
+- meta_title 50-60: pad with an audience or occasion qualifier if the name alone is under 50.
+- meta_description 140-160: one flowing sentence + gentle CTA.
+- og_title 55-70.
+- og_description 170-200 HARD CEILING (~35-40 words). Two short sentences then STOP.
+Count characters including spaces. Never stop short, never overshoot.
+
+## PROHIBITED
+Markdown, emojis, ALL CAPS, superlatives without evidence ("best", "amazing", "stunning"), keyword stuffing.
+
+Return ONLY the JSON object.`;
 
 function stripFences(text: string): string {
   return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
@@ -61,7 +85,7 @@ async function generateOne(groqKey: string, entity: Entity): Promise<SeoFields> 
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: buildPrompt(entity) },
       ],
-      temperature: 0.7,
+      temperature: 0.6,
       max_tokens: 1024,
       response_format: { type: "json_object" },
     }),

@@ -105,7 +105,6 @@ export function CategoriesSection({
     const payload: CategoryPayload = {
       name: state.name.trim(),
       slug: (state.slug || slugify(state.name)).trim(),
-      description: state.description ? state.description.trim() : null,
       sort_order:
         Number(state.sortOrder || 0) ||
         (categoryEditor ? 0 : Number(nextSortOrder(categories))),
@@ -149,7 +148,6 @@ export function CategoriesSection({
     const payload: SubcategoryPayload = {
       name: state.name.trim(),
       slug: (state.slug || slugify(state.name)).trim(),
-      description: state.description ? state.description.trim() : null,
       sort_order:
         Number(state.sortOrder || 0) ||
         (subcategoryEditor ? 0 : Number(nextSortOrder(subcategories))),

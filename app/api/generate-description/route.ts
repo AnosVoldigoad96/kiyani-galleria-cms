@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 type DescriptionRequest = {
-  type: "product" | "category" | "subcategory";
+  type: "product";
   name: string;
   category?: string;
 };
@@ -101,20 +101,39 @@ export async function POST(request: Request) {
     return Response.json({ error: "Name is required." }, { status: 400 });
   }
 
-  const systemPrompt = `You write short product/category descriptions for Kiyani Galleria — a sister-run handmade gifting brand from Arifwala, Punjab, Pakistan.
+  const systemPrompt = `# Product Description Writer — Kiyani Galleria
 
-The brand works across multiple crafts: paper crafts, painting on canvas & cloth, wooden crafts, balloon-packed gifts, yarn knitted & crochet creations, and decorated nikaah namas.
+You write SHORT product descriptions for Kiyani Galleria, a sister-run handmade gifting brand from Arifwala, Punjab, Pakistan.
 
-Write a warm, personal, 2-3 sentence description. Focus on what makes this item special, who it's for, and the feeling it creates. Avoid generic marketing language. Write as if a sister is describing what she made and why.
+The brand makes paper crafts, hand-painted fabric, wooden keepsakes, balloon reveal boxes, crochet & knit, and decorated nikaah namas — for weddings / nikah, baby showers, Eid, birthdays, and mehndi.
 
-Return ONLY the description text. No quotes, no JSON, no labels.`;
+## LENGTH — STRICT
+- EXACTLY 2 sentences.
+- 200-360 characters TOTAL (target 280). Never longer.
+- Count spaces. If your first draft is longer, shorten it before replying.
 
-  const userPrompt =
-    input.type === "product"
-      ? `Write a product description for "${input.name}"${input.category ? ` in the "${input.category}" category` : ""}.`
-      : input.type === "subcategory"
-        ? `Write a subcategory description for "${input.name}"${input.category ? ` under "${input.category}"` : ""}.`
-        : `Write a category description for "${input.name}".`;
+## STRUCTURE (both sentences, in order)
+1. First sentence — WHAT it is: material / technique + one defining detail (size, finish, colour, or motif).
+2. Second sentence — WHO / WHEN: the occasion or feeling it fits, in warm language.
+
+## VOICE
+Warm, specific, confident. Like a sister quietly describing what she made. Avoid superlatives, emojis, and marketing clichés ("exquisite", "stunning", "amazing", "perfect for everyone", "one of a kind").
+
+## EXAMPLES
+Good (258 chars):
+"Hand-crocheted blush bouquet of seven cotton-yarn roses, wrapped in a kraft sleeve and finished with a twine bow. A softer alternative to fresh flowers for an engagement, mayun, or a birthday that deserves something kept."
+
+Good (221 chars):
+"Walnut-finish plaque, laser-cut to your chosen name and hand-painted with a fine script detail. Ships ready-to-mount — a quiet gift for a new home, an anniversary, or the couple who collect the dates that mattered."
+
+Bad — too long / too marketing:
+"Our absolutely stunning hand-painted dupatta is an incredible heirloom piece that you will cherish forever because every single detail has been obsessed over by our talented artisans..."
+
+Return ONLY the description text. No quotes, no JSON, no labels, no preamble.`;
+
+  const userPrompt = `Write a product description for "${input.name}"${
+    input.category ? ` in the "${input.category}" category` : ""
+  }.`;
 
   try {
     const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -129,8 +148,8 @@ Return ONLY the description text. No quotes, no JSON, no labels.`;
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        temperature: 0.8,
-        max_tokens: 256,
+        temperature: 0.6,
+        max_tokens: 180, // ~360 chars worth — hard ceiling so it can't go long
       }),
     });
 
@@ -149,7 +168,16 @@ Return ONLY the description text. No quotes, no JSON, no labels.`;
       return Response.json({ error: "AI returned empty response." }, { status: 502 });
     }
 
-    return Response.json({ description: content });
+    // Server-side ceiling: 360 chars matches the prompt's upper bound. If the
+    // model slipped past it, trim to the last sentence boundary under 360.
+    let description = content.replace(/^["']+|["']+$/g, "").trim();
+    if (description.length > 360) {
+      const slice = description.slice(0, 360);
+      const lastStop = Math.max(slice.lastIndexOf(". "), slice.lastIndexOf("? "), slice.lastIndexOf("! "));
+      description = (lastStop > 200 ? slice.slice(0, lastStop + 1) : slice).trim();
+    }
+
+    return Response.json({ description });
   } catch (error) {
     console.error("Description generation error:", error);
     return Response.json({ error: "Failed to generate description." }, { status: 500 });

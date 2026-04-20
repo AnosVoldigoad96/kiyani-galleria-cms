@@ -257,8 +257,8 @@ function buildInvoiceHtml(inv: InvoiceData, lines: InvoiceLine[], paymentMethod?
 
     /* ─── Masthead ─────────────────────────────────────── */
     .masthead { display: flex; justify-content: space-between; align-items: flex-start; gap: 40px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
-    .brand-block { display: flex; flex-direction: column; gap: 4px; }
-    .brand-block img { height: 56px; width: auto; margin-bottom: 6px; }
+    .brand-block { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+    .brand-block img { height: 56px; width: auto; max-width: 260px; object-fit: contain; display: block; margin-bottom: 6px; flex: 0 0 auto; align-self: flex-start; }
     .brand-tag { font-size: 10px; color: var(--ink-4); letter-spacing: 0.2em; text-transform: uppercase; }
     .brand-url { font-size: 11px; color: var(--accent); font-weight: 700; letter-spacing: 0.02em; margin-top: 2px; }
 
@@ -395,7 +395,7 @@ function buildInvoiceHtml(inv: InvoiceData, lines: InvoiceLine[], paymentMethod?
     <!-- Masthead -->
     <header class="masthead">
       <div class="brand-block">
-        <img src="${LOGO_BASE64}" alt="Kiyani Galleria" />
+        <img src="${LOGO_BASE64}" alt="Kiyani Galleria" style="height:56px;width:auto;max-width:260px;object-fit:contain;display:block;flex:0 0 auto;align-self:flex-start;margin-bottom:6px;" />
         <div class="brand-tag">Handcrafted in Arifwala, Punjab</div>
         <div class="brand-url">www.kiyanigalleria.com</div>
       </div>

@@ -122,16 +122,30 @@ function esc(value: string) {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 }
 
-function statusBadge(status: string) {
-  const map: Record<string, { label: string; bg: string; color: string }> = {
-    paid: { label: "PAID", bg: "#dcfce7", color: "#166534" },
-    issued: { label: "ISSUED", bg: "#dbeafe", color: "#1d4ed8" },
-    partially_paid: { label: "PARTIAL", bg: "#fef3c7", color: "#92400e" },
-    overdue: { label: "OVERDUE", bg: "#fee2e2", color: "#991b1b" },
-    void: { label: "VOID", bg: "#fee2e2", color: "#991b1b" },
+type StatusMeta = {
+  label: string;
+  bg: string;
+  color: string;
+  border: string;
+  watermark: string | null;
+};
+
+function statusMeta(status: string): StatusMeta {
+  const map: Record<string, StatusMeta> = {
+    paid:            { label: "PAID",      bg: "#ecfdf5", color: "#065f46", border: "#10b981", watermark: "PAID" },
+    issued:          { label: "ISSUED",    bg: "#eff6ff", color: "#1e40af", border: "#3b82f6", watermark: null },
+    partially_paid:  { label: "PARTIAL",   bg: "#fffbeb", color: "#92400e", border: "#f59e0b", watermark: null },
+    overdue:         { label: "OVERDUE",   bg: "#fef2f2", color: "#991b1b", border: "#ef4444", watermark: "OVERDUE" },
+    void:            { label: "VOID",      bg: "#f1f5f9", color: "#475569", border: "#94a3b8", watermark: "VOID" },
+    draft:           { label: "DRAFT",     bg: "#f8fafc", color: "#475569", border: "#cbd5e1", watermark: null },
   };
-  const s = map[status] ?? { label: "DRAFT", bg: "#f1f5f9", color: "#475569" };
-  return `<span style="display:inline-block;padding:3px 12px;border-radius:20px;font-size:10px;font-weight:800;letter-spacing:0.1em;background:${s.bg};color:${s.color};">${s.label}</span>`;
+  return map[status] ?? map.draft;
+}
+
+function statusBadge(meta: StatusMeta) {
+  return `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;font-size:10px;font-weight:800;letter-spacing:0.14em;background:${meta.bg};color:${meta.color};border:1px solid ${meta.border};">
+    <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${meta.border};"></span>${meta.label}
+  </span>`;
 }
 
 function parseLineDescription(description: string) {
@@ -151,184 +165,350 @@ function buildInvoiceHtml(inv: InvoiceData, lines: InvoiceLine[], paymentMethod?
   const orderNo = inv.order?.order_no ?? null;
   const customerPhone = inv.order?.customer_phone ?? null;
   const customerAddress = inv.order ? [inv.order.address, inv.order.city].filter(Boolean).join(", ") : null;
+  const status = statusMeta(inv.status);
+
+  const subtotal = Number(inv.subtotal_pkr || 0);
+  const discount = Number(inv.discount_pkr || 0);
+  const shipping = Number(inv.shipping_pkr || 0);
+  const tax = Number(inv.tax_pkr || 0);
+  const total = Number(inv.total_pkr || 0);
+  const paid = Number(inv.paid_pkr || 0);
+  const balance = Number(inv.balance_pkr || 0);
 
   const rows = lines.map((l, i) => {
     const parsed = parseLineDescription(l.description);
     const hasDiscount = parsed.discountPercent > 0 && parsed.originalPrice > 0;
-    const displayName = hasDiscount
-      ? `${esc(parsed.name)} <span style="color:#c55e4e;font-size:11px;font-weight:700;">(${parsed.discountPercent}% off)</span>`
-      : esc(l.description);
-    const originalPrice = hasDiscount ? parsed.originalPrice : Number(l.unit_price_pkr);
-    const discountedPrice = Number(l.unit_price_pkr);
+    const unit = Number(l.unit_price_pkr);
+
+    const priceCell = hasDiscount
+      ? `<span style="color:#94a3b8;text-decoration:line-through;font-size:11px;">${fmt(parsed.originalPrice)}</span>
+         <span style="display:block;color:#1a1a1a;font-weight:600;">${fmt(unit)}</span>`
+      : `<span style="color:#1a1a1a;font-weight:500;">${fmt(unit)}</span>`;
+
+    const nameCell = hasDiscount
+      ? `<div style="color:#1a1a1a;font-weight:600;">${esc(parsed.name)}</div>
+         <div style="margin-top:3px;display:inline-block;padding:2px 8px;background:#fef2f2;color:#991b1b;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:0.04em;">${parsed.discountPercent}% off</div>`
+      : `<div style="color:#1a1a1a;font-weight:600;">${esc(l.description)}</div>`;
 
     return `
-    <tr style="background:${i % 2 === 0 ? "#ffffff" : "#faf9f7"};">
-      <td style="padding:12px 16px;font-size:13px;color:#1a1a1a;">${displayName}</td>
-      <td style="padding:12px 16px;font-size:13px;color:#1a1a1a;text-align:right;">${fmt(originalPrice)}</td>
-      <td style="padding:12px 16px;font-size:13px;color:#1a1a1a;text-align:right;">${hasDiscount ? `<span style="color:#c55e4e;font-weight:600;">${fmt(discountedPrice)}</span>` : "—"}</td>
-      <td style="padding:12px 16px;font-size:13px;color:#1a1a1a;text-align:center;">${l.quantity}</td>
-      <td style="padding:12px 16px;font-size:13px;color:#1a1a1a;text-align:right;font-weight:600;">${fmt(Number(l.line_total_pkr))}</td>
+    <tr style="background:${i % 2 === 0 ? "#ffffff" : "#fafafa"};">
+      <td style="padding:14px 18px;font-size:13px;vertical-align:top;border-bottom:1px solid #f1f5f9;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:22px;height:22px;flex-shrink:0;border-radius:6px;background:#fef7f5;color:#c55e4e;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;">${i + 1}</div>
+          <div>${nameCell}</div>
+        </div>
+      </td>
+      <td style="padding:14px 18px;font-size:13px;text-align:right;vertical-align:top;border-bottom:1px solid #f1f5f9;">${priceCell}</td>
+      <td style="padding:14px 18px;font-size:13px;text-align:center;vertical-align:top;border-bottom:1px solid #f1f5f9;color:#475569;">${l.quantity}</td>
+      <td style="padding:14px 18px;font-size:13px;text-align:right;vertical-align:top;border-bottom:1px solid #f1f5f9;font-weight:700;color:#1a1a1a;">${fmt(Number(l.line_total_pkr))}</td>
     </tr>`;
   }).join("");
+
+  const paymentRowsHtml = paymentMethod ? [
+    ["Method", paymentMethod.name],
+    paymentMethod.account_title ? ["Account Title", paymentMethod.account_title] : null,
+    paymentMethod.account_number ? ["Account Number", paymentMethod.account_number] : null,
+    paymentMethod.bank_name ? ["Bank", paymentMethod.bank_name] : null,
+  ].filter((r): r is [string, string] => r !== null).map(([label, value]) =>
+    `<div style="flex:1;min-width:130px;">
+      <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.18em;margin-bottom:4px;font-weight:700;">${label}</div>
+      <div style="font-size:13px;color:#1a1a1a;font-weight:700;word-break:break-all;">${esc(value)}</div>
+    </div>`
+  ).join("") : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
+  <title>${esc(inv.invoice_no)}</title>
   <style>
+    :root {
+      --accent: #c55e4e;
+      --accent-soft: #fef7f5;
+      --ink: #0f172a;
+      --ink-2: #334155;
+      --ink-3: #64748b;
+      --ink-4: #94a3b8;
+      --line: #e2e8f0;
+      --line-soft: #f1f5f9;
+      --bg-soft: #fafafa;
+    }
     @page { size: A4; margin: 0; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; background: #fff; }
-    .page { padding: 40px 48px; min-height: 100vh; display: flex; flex-direction: column; }
+    html, body { font-family: 'Inter', 'Segoe UI', -apple-system, Arial, sans-serif; color: var(--ink); background: #fff; -webkit-font-smoothing: antialiased; }
 
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; }
-    .brand { }
-    .brand-name { font-size: 28px; font-weight: 800; color: #c55e4e; letter-spacing: -0.5px; }
-    .brand-sub { font-size: 11px; color: #94a3b8; margin-top: 4px; letter-spacing: 0.15em; text-transform: uppercase; }
-    .invoice-title { font-size: 36px; font-weight: 800; color: #e2e8f0; text-align: right; letter-spacing: -1px; line-height: 1; }
-    .invoice-no { font-size: 14px; font-weight: 700; color: #1a1a1a; text-align: right; margin-top: 8px; }
+    .sheet { position: relative; min-height: 297mm; padding: 36px 44px 28px; display: flex; flex-direction: column; }
+    .sheet::before {
+      content: ""; position: absolute; top: 0; left: 0; right: 0; height: 6px;
+      background: linear-gradient(90deg, #d97a69 0%, var(--accent) 45%, #a84a3c 100%);
+    }
 
-    .info-grid { display: flex; gap: 24px; margin-bottom: 32px; }
-    .info-card { flex: 1; background: #faf9f7; border-radius: 12px; padding: 20px; }
-    .info-label { font-size: 9px; font-weight: 800; color: #c55e4e; text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 10px; }
-    .info-value { font-size: 13px; color: #334155; line-height: 1.6; }
-    .info-value strong { color: #1a1a1a; }
+    ${status.watermark ? `
+    .watermark {
+      position: absolute;
+      top: 42%; left: 50%;
+      transform: translate(-50%, -50%) rotate(-22deg);
+      font-size: 180px; font-weight: 900; letter-spacing: 0.05em;
+      color: ${status.border}; opacity: 0.07;
+      pointer-events: none; user-select: none;
+      white-space: nowrap;
+    }
+    ` : ""}
 
-    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-    thead tr { border-bottom: 2px solid #c55e4e; }
-    th { padding: 10px 16px; font-size: 9px; font-weight: 800; color: #c55e4e; text-transform: uppercase; letter-spacing: 0.15em; text-align: left; }
-    th:nth-child(2) { text-align: center; }
-    th:nth-child(3), th:nth-child(4) { text-align: right; }
-    tbody tr { border-bottom: 1px solid #f1f0ee; }
+    /* ─── Masthead ─────────────────────────────────────── */
+    .masthead { display: flex; justify-content: space-between; align-items: flex-start; gap: 40px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+    .brand-block { display: flex; flex-direction: column; gap: 4px; }
+    .brand-block img { height: 56px; width: auto; margin-bottom: 6px; }
+    .brand-tag { font-size: 10px; color: var(--ink-4); letter-spacing: 0.2em; text-transform: uppercase; }
+    .brand-url { font-size: 11px; color: var(--accent); font-weight: 700; letter-spacing: 0.02em; margin-top: 2px; }
 
-    .totals { margin-left: auto; width: 280px; }
-    .total-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; color: #64748b; }
-    .total-row span:last-child { color: #1a1a1a; font-weight: 500; }
-    .total-final { border-top: 2px solid #c55e4e; margin-top: 8px; padding-top: 12px; }
-    .total-final span { font-size: 18px; font-weight: 800; color: #c55e4e; }
+    .meta-block { text-align: right; }
+    .meta-title {
+      font-size: 11px; letter-spacing: 0.3em; color: var(--ink-4); text-transform: uppercase; font-weight: 700;
+    }
+    .meta-number {
+      font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+      font-size: 26px; font-weight: 800; color: var(--ink); letter-spacing: -0.02em;
+      margin-top: 6px;
+    }
+    .meta-status { margin-top: 10px; }
 
-    .notes { background: #faf9f7; border-left: 3px solid #c55e4e; border-radius: 0 8px 8px 0; padding: 16px 20px; margin-top: 8px; font-size: 12px; color: #475569; line-height: 1.7; white-space: pre-wrap; }
-    .notes-title { font-size: 9px; font-weight: 800; color: #c55e4e; text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 6px; }
+    /* ─── Parties ──────────────────────────────────────── */
+    .parties { display: flex; gap: 16px; margin-top: 28px; }
+    .party-card {
+      flex: 1; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px;
+    }
+    .party-card.accent {
+      border-color: ${status.border}; background: ${status.bg};
+    }
+    .party-label {
+      font-size: 9px; font-weight: 800; color: var(--accent);
+      text-transform: uppercase; letter-spacing: 0.22em; margin-bottom: 10px;
+    }
+    .party-card.accent .party-label { color: ${status.color}; }
+    .party-value { font-size: 12px; line-height: 1.65; color: var(--ink-2); }
+    .party-value strong { color: var(--ink); font-weight: 700; }
+    .party-dates { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+    .party-dates dt { font-size: 10px; color: var(--ink-4); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; align-self: center; }
+    .party-dates dd { font-size: 12px; color: var(--ink); font-weight: 600; }
 
-    .footer { margin-top: auto; padding-top: 24px; border-top: 1px solid #f1f0ee; display: flex; justify-content: space-between; align-items: center; }
-    .footer-left { font-size: 10px; color: #94a3b8; }
-    .footer-right { font-size: 10px; color: #94a3b8; text-align: right; }
-    .footer-brand { font-weight: 700; color: #c55e4e; }
+    .amount-due-label { font-size: 9px; font-weight: 800; color: ${status.color}; text-transform: uppercase; letter-spacing: 0.22em; }
+    .amount-due-value { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 26px; font-weight: 800; color: ${status.color}; margin-top: 6px; line-height: 1; letter-spacing: -0.02em; }
+    .amount-due-hint { font-size: 10px; color: ${status.color}; margin-top: 8px; font-weight: 600; opacity: 0.8; }
+
+    /* ─── Items ────────────────────────────────────────── */
+    .items-title {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-top: 32px; margin-bottom: 12px;
+    }
+    .items-title h2 {
+      font-size: 11px; letter-spacing: 0.25em; color: var(--accent);
+      text-transform: uppercase; font-weight: 800;
+    }
+    .items-title .count {
+      font-size: 11px; color: var(--ink-4); font-weight: 600;
+    }
+
+    table.items { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    table.items thead th {
+      padding: 11px 18px; font-size: 9px; font-weight: 800; color: var(--ink-3);
+      text-transform: uppercase; letter-spacing: 0.18em; text-align: left;
+      background: #f8fafc; border-bottom: 1px solid var(--line);
+    }
+    table.items thead th:nth-child(2), table.items thead th:nth-child(4) { text-align: right; }
+    table.items thead th:nth-child(3) { text-align: center; }
+    table.items tbody tr:last-child td { border-bottom: none !important; }
+
+    /* ─── Totals + Notes ──────────────────────────────── */
+    .summary-row { display: flex; gap: 20px; margin-top: 24px; align-items: stretch; }
+    .notes-panel {
+      flex: 1; background: var(--accent-soft); border-radius: 12px; padding: 18px 20px;
+      border: 1px solid #f4d8d2;
+    }
+    .notes-panel h3 {
+      font-size: 9px; font-weight: 800; color: var(--accent); text-transform: uppercase;
+      letter-spacing: 0.22em; margin-bottom: 8px;
+    }
+    .notes-panel .body { font-size: 12px; color: var(--ink-2); line-height: 1.7; white-space: pre-wrap; }
+
+    .totals-panel {
+      width: 320px; flex-shrink: 0; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px;
+    }
+    .totals-row { display: flex; justify-content: space-between; align-items: baseline; padding: 6px 0; font-size: 12px; color: var(--ink-3); }
+    .totals-row span:last-child { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .totals-row.muted span:last-child { color: var(--ink-2); font-weight: 500; }
+    .totals-divider { height: 1px; background: var(--line-soft); margin: 8px 0; }
+    .totals-row.grand {
+      padding-top: 10px; border-top: 2px solid var(--accent); margin-top: 4px;
+    }
+    .totals-row.grand span:first-child { font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.18em; font-weight: 800; }
+    .totals-row.grand span:last-child { font-size: 20px; color: var(--accent); font-weight: 800; font-variant-numeric: tabular-nums; }
+    .totals-row.balance {
+      padding: 8px 10px; margin-top: 8px; border-radius: 8px;
+      background: ${status.bg}; color: ${status.color};
+    }
+    .totals-row.balance span:first-child { font-size: 10px; text-transform: uppercase; letter-spacing: 0.2em; font-weight: 800; }
+    .totals-row.balance span:last-child { font-size: 15px; font-weight: 800; color: ${status.color}; }
+
+    /* ─── Payment details ─────────────────────────────── */
+    .payment {
+      margin-top: 24px; border: 1px solid var(--line); border-radius: 12px; padding: 20px 22px;
+      background: #fff; position: relative;
+    }
+    .payment::before {
+      content: ""; position: absolute; top: 0; left: 20px; right: 20px; height: 3px;
+      background: var(--accent); border-radius: 0 0 3px 3px;
+    }
+    .payment h3 {
+      font-size: 9px; font-weight: 800; color: var(--accent); text-transform: uppercase;
+      letter-spacing: 0.22em; margin-bottom: 14px;
+    }
+    .payment-grid { display: flex; flex-wrap: wrap; gap: 20px 28px; }
+    .payment-note {
+      margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line);
+      font-size: 11px; color: var(--ink-3); line-height: 1.7;
+    }
+    .payment-whatsapp {
+      margin-top: 12px; display: inline-flex; align-items: center; gap: 8px;
+      background: #dcfce7; color: #14532d; border: 1px solid #86efac;
+      padding: 8px 14px; border-radius: 8px; font-size: 11px; font-weight: 700;
+    }
+    .payment-whatsapp strong { font-weight: 800; }
+
+    /* ─── Footer ──────────────────────────────────────── */
+    .footer {
+      margin-top: auto; padding-top: 20px; display: grid;
+      grid-template-columns: 1fr 1fr 1fr; align-items: end; gap: 16px;
+      border-top: 1px solid var(--line); font-size: 10px; color: var(--ink-4);
+    }
+    .footer .brand-line { font-weight: 700; color: var(--accent); font-size: 11px; letter-spacing: 0.04em; }
+    .footer .footer-contact { line-height: 1.7; }
+    .footer .footer-center { text-align: center; line-height: 1.7; }
+    .footer .footer-right { text-align: right; line-height: 1.7; }
+    .footer .thanks { display: inline-block; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-3); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; font-size: 9px; }
   </style>
 </head>
 <body>
-  <div class="page">
-    <!-- Header -->
-    <div class="header">
-      <div class="brand">
-        <img src="${LOGO_BASE64}" alt="Kiyani Galleria" style="height:70px;width:auto;margin-bottom:6px;" />
-        <div class="brand-sub">Handcrafted with Love &bull; Arifwala, Punjab</div>
-        <div style="font-size:11px;color:#c55e4e;margin-top:2px;font-weight:600;">www.kiyanigalleria.com</div>
-      </div>
-      <div>
-        <div class="invoice-title">INVOICE</div>
-        <div class="invoice-no">${esc(inv.invoice_no)} &nbsp;${statusBadge(inv.status)}</div>
-      </div>
-    </div>
+  <div class="sheet">
+    ${status.watermark ? `<div class="watermark">${status.watermark}</div>` : ""}
 
-    <!-- Info Cards -->
-    <div class="info-grid">
-      <div class="info-card">
-        <div class="info-label">Bill To</div>
-        <div class="info-value">
+    <!-- Masthead -->
+    <header class="masthead">
+      <div class="brand-block">
+        <img src="${LOGO_BASE64}" alt="Kiyani Galleria" />
+        <div class="brand-tag">Handcrafted in Arifwala, Punjab</div>
+        <div class="brand-url">www.kiyanigalleria.com</div>
+      </div>
+      <div class="meta-block">
+        <div class="meta-title">Invoice</div>
+        <div class="meta-number">${esc(inv.invoice_no)}</div>
+        <div class="meta-status">${statusBadge(status)}</div>
+      </div>
+    </header>
+
+    <!-- Bill To / Dates / Amount -->
+    <section class="parties">
+      <div class="party-card">
+        <div class="party-label">Bill To</div>
+        <div class="party-value">
           <strong>${esc(inv.customer_name || "Customer")}</strong><br/>
           ${esc(inv.customer_email || "No email on file")}
           ${customerPhone ? `<br/>${esc(customerPhone)}` : ""}
           ${customerAddress ? `<br/>${esc(customerAddress)}` : ""}
         </div>
       </div>
-      <div class="info-card">
-        <div class="info-label">Invoice Details</div>
-        <div class="info-value">
-          <strong>Issue Date:</strong> ${esc(fmtDate(inv.issue_date))}<br/>
-          <strong>Due Date:</strong> ${esc(fmtDate(inv.due_date))}
-          ${orderNo ? `<br/><strong>Order:</strong> ${esc(orderNo)}` : ""}
+      <div class="party-card">
+        <div class="party-label">Invoice Details</div>
+        <dl class="party-dates">
+          <dt>Issued</dt><dd>${esc(fmtDate(inv.issue_date))}</dd>
+          <dt>Due</dt><dd>${esc(fmtDate(inv.due_date))}</dd>
+          ${orderNo ? `<dt>Order</dt><dd style="font-family:ui-monospace,monospace;">${esc(orderNo)}</dd>` : ""}
+        </dl>
+      </div>
+      <div class="party-card accent">
+        <div class="amount-due-label">Amount Due</div>
+        <div class="amount-due-value">${fmt(balance)}</div>
+        <div class="amount-due-hint">
+          ${balance <= 0 ? "Settled in full — thank you." : `of ${fmt(total)} total`}
         </div>
       </div>
-      <div class="info-card" style="text-align:center;">
-        <div class="info-label">Amount Due</div>
-        <div style="font-size:24px;font-weight:800;color:#c55e4e;margin-top:8px;">${fmt(inv.balance_pkr)}</div>
-      </div>
-    </div>
+    </section>
 
-    <!-- Line Items -->
-    <table>
+    <!-- Items -->
+    <div class="items-title">
+      <h2>Items</h2>
+      <span class="count">${lines.length} line${lines.length === 1 ? "" : "s"}</span>
+    </div>
+    <table class="items">
       <thead>
         <tr>
-          <th>Description</th>
-          <th style="text-align:right;">Price</th>
-          <th style="text-align:right;">Discounted</th>
-          <th style="text-align:center;">Qty</th>
-          <th style="text-align:right;">Total</th>
+          <th style="width:52%;">Description</th>
+          <th style="width:18%;text-align:right;">Unit Price</th>
+          <th style="width:10%;text-align:center;">Qty</th>
+          <th style="width:20%;text-align:right;">Line Total</th>
         </tr>
       </thead>
       <tbody>
-        ${rows || '<tr><td colspan="5" style="padding:20px;text-align:center;color:#94a3b8;font-size:13px;">No line items</td></tr>'}
+        ${rows || '<tr><td colspan="4" style="padding:28px;text-align:center;color:var(--ink-4);font-size:13px;">No line items on this invoice</td></tr>'}
       </tbody>
     </table>
 
-    <!-- Totals + Notes side by side -->
-    <div style="display:flex;gap:24px;margin-top:16px;">
+    <!-- Totals + Notes -->
+    <section class="summary-row">
       ${inv.notes ? `
-      <div class="notes" style="flex:1;margin-top:0;">
-        <div class="notes-title">Notes</div>
-        ${esc(inv.notes)}
+        <div class="notes-panel">
+          <h3>Notes</h3>
+          <div class="body">${esc(inv.notes)}</div>
+        </div>
+      ` : `<div style="flex:1;"></div>`}
+      <div class="totals-panel">
+        <div class="totals-row muted"><span>Subtotal</span><span>${fmt(subtotal)}</span></div>
+        ${discount > 0 ? `<div class="totals-row muted"><span>Discount</span><span style="color:#c55e4e !important;">−${fmt(discount)}</span></div>` : ""}
+        ${shipping > 0 ? `<div class="totals-row muted"><span>Shipping</span><span>+${fmt(shipping)}</span></div>` : ""}
+        ${tax > 0 ? `<div class="totals-row muted"><span>Tax</span><span>+${fmt(tax)}</span></div>` : ""}
+        <div class="totals-row grand"><span>Total</span><span>${fmt(total)}</span></div>
+        ${paid > 0 ? `
+          <div class="totals-divider"></div>
+          <div class="totals-row"><span>Paid</span><span>−${fmt(paid)}</span></div>
+          <div class="totals-row balance"><span>Balance due</span><span>${fmt(balance)}</span></div>
+        ` : balance !== total ? `
+          <div class="totals-divider"></div>
+          <div class="totals-row balance"><span>Balance due</span><span>${fmt(balance)}</span></div>
+        ` : ""}
       </div>
-      ` : "<div style='flex:1;'></div>"}
-      <div class="totals" style="margin-top:0;">
-        <div class="total-row"><span>Subtotal</span><span>${fmt(inv.subtotal_pkr)}</span></div>
-        ${Number(inv.discount_pkr) > 0 ? `<div class="total-row"><span>Discount</span><span>-${fmt(inv.discount_pkr)}</span></div>` : ""}
-        ${Number(inv.shipping_pkr) > 0 ? `<div class="total-row"><span>Shipping</span><span>+${fmt(inv.shipping_pkr)}</span></div>` : ""}
-        ${Number(inv.tax_pkr) > 0 ? `<div class="total-row"><span>Tax</span><span>+${fmt(inv.tax_pkr)}</span></div>` : ""}
-        <div class="total-row"><span>Paid</span><span>${fmt(inv.paid_pkr)}</span></div>
-        <div class="total-row total-final"><span>Total</span><span>${fmt(inv.total_pkr)}</span></div>
-      </div>
-    </div>
+    </section>
 
     ${paymentMethod ? `
-    <div style="margin-top:24px;border:2px solid #c55e4e;border-radius:12px;padding:20px;background:#fef7f5;">
-      <div style="font-size:9px;font-weight:800;color:#c55e4e;text-transform:uppercase;letter-spacing:0.2em;margin-bottom:12px;">Payment Details</div>
-      <div style="display:flex;gap:32px;font-size:13px;color:#1a1a1a;">
-        <div>
-          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Method</div>
-          <strong>${esc(paymentMethod.name)}</strong>
-        </div>
-        ${paymentMethod.account_title ? `<div>
-          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Account Title</div>
-          <strong>${esc(paymentMethod.account_title)}</strong>
-        </div>` : ""}
-        ${paymentMethod.account_number ? `<div>
-          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Account Number</div>
-          <strong>${esc(paymentMethod.account_number)}</strong>
-        </div>` : ""}
-        ${paymentMethod.bank_name ? `<div>
-          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Bank</div>
-          <strong>${esc(paymentMethod.bank_name)}</strong>
-        </div>` : ""}
-      </div>
-      ${paymentMethod.instructions ? `<p style="margin-top:12px;font-size:12px;color:#475569;line-height:1.6;">${esc(paymentMethod.instructions)}</p>` : ""}
-      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed #c55e4e40;font-size:12px;color:#c55e4e;font-weight:700;">
-        After payment, please send a screenshot via WhatsApp${whatsappNumber ? ` to <span style="color:#1a1a1a;">${esc(whatsappNumber)}</span>` : ""} to confirm your payment.
-      </div>
-    </div>
+      <section class="payment">
+        <h3>How to pay</h3>
+        <div class="payment-grid">${paymentRowsHtml}</div>
+        ${paymentMethod.instructions ? `<p class="payment-note">${esc(paymentMethod.instructions)}</p>` : ""}
+        ${whatsappNumber ? `
+          <div class="payment-whatsapp">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.465 3.488"/></svg>
+            After payment, send a receipt to <strong>${esc(whatsappNumber)}</strong> on WhatsApp.
+          </div>
+        ` : `
+          <p class="payment-note" style="color:var(--accent);font-weight:700;">After payment, please send the receipt to us so we can confirm your order.</p>
+        `}
+      </section>
     ` : ""}
 
     <!-- Footer -->
-    <div class="footer">
-      <div class="footer-left">
-        <span class="footer-brand">Kiyani Galleria</span> &bull; hello@kiyanigalleria.com<br/>
-        Arifwala, Punjab, Pakistan &bull; www.kiyanigalleria.com
+    <footer class="footer">
+      <div class="footer-contact">
+        <div class="brand-line">Kiyani Galleria</div>
+        hello@kiyanigalleria.com<br/>
+        Arifwala, Punjab, Pakistan
+      </div>
+      <div class="footer-center">
+        <span class="thanks">Thank you</span>
       </div>
       <div class="footer-right">
-        Generated ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}<br/>
-        Thank you for your business
+        Generated ${new Date().toLocaleDateString("en-GB", { year: "numeric", month: "long", day: "numeric" })}<br/>
+        www.kiyanigalleria.com
       </div>
-    </div>
+    </footer>
   </div>
 </body>
 </html>`;

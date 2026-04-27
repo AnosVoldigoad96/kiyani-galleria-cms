@@ -174,6 +174,7 @@ export function CmsDashboard() {
       <BrandSection
         brandFlags={data?.brandFlags ?? []}
         brandTokens={data?.brandTokens ?? []}
+        heroSlides={data?.heroSlides ?? []}
         onRefresh={refetch}
       />
     );

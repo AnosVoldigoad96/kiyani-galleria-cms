@@ -178,6 +178,15 @@ export type CmsBrandFlag = {
   enabled: boolean;
 };
 
+export type CmsHeroSlide = {
+  imageUrl: string;
+  subtitle: string;
+  title: string;
+  description: string;
+  ctaLabel: string;
+  ctaLink: string;
+};
+
 export type CmsAccountingStat = {
   label: string;
   value: string;

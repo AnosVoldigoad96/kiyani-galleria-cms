@@ -6,15 +6,17 @@ import { motion } from "framer-motion";
 import { Save } from "lucide-react";
 import { toast } from "sonner";
 
-import type { CmsBrandFlag, CmsBrandToken } from "@/lib/cms-data";
+import type { CmsBrandFlag, CmsBrandToken, CmsHeroSlide } from "@/lib/cms-data";
 
 import { upsertBrandSettingsBatch } from "@/components/cms/brand/brand-api";
+import { HeroSlidesEditor } from "@/components/cms/brand/hero-slides-editor";
 import { surfaceClassName } from "@/components/cms/cms-shared";
 import { Button } from "@/components/ui/button";
 
 type BrandSectionProps = {
   brandFlags: CmsBrandFlag[];
   brandTokens: CmsBrandToken[];
+  heroSlides: CmsHeroSlide[];
   onRefresh?: () => void;
 };
 
@@ -25,7 +27,7 @@ function isHexColor(value: string) {
   return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value.trim());
 }
 
-export function BrandSection({ brandFlags, brandTokens, onRefresh }: BrandSectionProps) {
+export function BrandSection({ brandFlags, brandTokens, heroSlides, onRefresh }: BrandSectionProps) {
   const [tokenValues, setTokenValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(brandTokens.map((token) => [token.key, token.value])),
   );
@@ -87,6 +89,8 @@ export function BrandSection({ brandFlags, brandTokens, onRefresh }: BrandSectio
 
   return (
     <div className="space-y-6">
+      <HeroSlidesEditor initialSlides={heroSlides} onRefresh={onRefresh} />
+
       <section className={surfaceClassName("p-5 sm:p-8")}>
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4">
           <div>

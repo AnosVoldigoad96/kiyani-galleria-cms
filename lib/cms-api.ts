@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   CmsAccountingStat,
   CmsBrandFlag,
+  CmsHeroSlide,
   CmsBrandToken,
   CmsCategory,
   CmsDashboardStat,
@@ -251,6 +252,7 @@ export type CmsDataBundle = {
   users: CmsUser[];
   brandTokens: CmsBrandToken[];
   brandFlags: CmsBrandFlag[];
+  heroSlides: CmsHeroSlide[];
   accountingStats: CmsAccountingStat[];
   invoices: CmsInvoice[];
   paymentMethods: CmsPaymentMethod[];
@@ -1160,6 +1162,19 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     },
   ];
 
+  // Parse hero slides from brand_settings
+  const heroSlidesValue = settingValue("hero_slides");
+  const heroSlides: CmsHeroSlide[] = Array.isArray(heroSlidesValue?.slides)
+    ? (heroSlidesValue.slides as Array<Partial<CmsHeroSlide>>).map((s) => ({
+        imageUrl: String(s.imageUrl ?? ""),
+        subtitle: String(s.subtitle ?? ""),
+        title: String(s.title ?? ""),
+        description: String(s.description ?? ""),
+        ctaLabel: String(s.ctaLabel ?? "Shop Collection"),
+        ctaLink: String(s.ctaLink ?? "/shop"),
+      }))
+    : [];
+
   return {
     stats,
     categories,
@@ -1171,6 +1186,7 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     users,
     brandTokens,
     brandFlags,
+    heroSlides,
     accountingStats,
     invoices,
     paymentMethods: (data.payment_methods ?? []).map((pm) => ({

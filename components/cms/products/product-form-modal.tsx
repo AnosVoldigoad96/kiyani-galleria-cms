@@ -387,37 +387,47 @@ export function ProductFormModal({
               <p className="text-xs text-muted-foreground italic">No sizes added yet.</p>
             )}
             {formState.sizes.map((opt, idx) => (
-              <div key={idx} className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={opt.size}
-                  onChange={(e) => {
-                    const next = [...formState.sizes];
-                    next[idx] = { ...next[idx], size: e.target.value };
-                    setFormState((p) => ({ ...p, sizes: next }));
-                  }}
-                  className={`${inputClass} !mt-0 flex-1`}
-                  placeholder="Size (e.g. Small, A4, 12 inch)"
-                />
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={opt.price}
-                  onChange={(e) => {
-                    const next = [...formState.sizes];
-                    next[idx] = { ...next[idx], price: e.target.value };
-                    setFormState((p) => ({ ...p, sizes: next }));
-                  }}
-                  className={`${inputClass} !mt-0 w-32`}
-                  placeholder="Price"
-                />
+              <div key={idx} className="flex flex-col sm:flex-row sm:items-end gap-2">
+                <label className="block flex-1 min-w-0">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--muted-foreground)] sm:hidden">
+                    Size
+                  </span>
+                  <input
+                    type="text"
+                    value={opt.size}
+                    onChange={(e) => {
+                      const next = [...formState.sizes];
+                      next[idx] = { ...next[idx], size: e.target.value };
+                      setFormState((p) => ({ ...p, sizes: next }));
+                    }}
+                    className={`${inputClass} !mt-1 sm:!mt-0`}
+                    placeholder="Size (e.g. Small, A4, 12 inch)"
+                  />
+                </label>
+                <label className="block sm:w-36 shrink-0">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--muted-foreground)] sm:hidden">
+                    Price (PKR)
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={opt.price}
+                    onChange={(e) => {
+                      const next = [...formState.sizes];
+                      next[idx] = { ...next[idx], price: e.target.value };
+                      setFormState((p) => ({ ...p, sizes: next }));
+                    }}
+                    className={`${inputClass} !mt-1 sm:!mt-0`}
+                    placeholder="Price"
+                  />
+                </label>
                 <button
                   type="button"
                   onClick={() =>
                     setFormState((p) => ({ ...p, sizes: p.sizes.filter((_, i) => i !== idx) }))
                   }
-                  className="rounded-md p-2 text-muted-foreground hover:bg-red-50 hover:text-red-600"
+                  className="self-end sm:self-auto h-10 w-10 sm:w-auto sm:h-auto sm:p-2 rounded-md text-muted-foreground hover:bg-red-50 hover:text-red-600 flex items-center justify-center text-lg shrink-0"
                   aria-label="Remove size"
                 >
                   ×
@@ -445,12 +455,12 @@ export function ProductFormModal({
             checked={formState.hasQualityOptions}
             onChange={(event) => handleChange("hasQualityOptions", event.target.checked)}
           />
-          Quality options (Local vs Imported)
+          Yarn quality options (Local vs Imported)
         </label>
         {formState.hasQualityOptions && (
           <div className="grid gap-3 rounded-xl border border-[var(--border)]/50 bg-slate-50/50 p-4 sm:grid-cols-2">
             <label className="block">
-              <span className={labelClass}>Local price (PKR)</span>
+              <span className={labelClass}>Local yarn price (PKR)</span>
               <input
                 type="number"
                 min="0"
@@ -462,7 +472,7 @@ export function ProductFormModal({
               />
             </label>
             <label className="block">
-              <span className={labelClass}>Imported price (PKR)</span>
+              <span className={labelClass}>Imported yarn price (PKR)</span>
               <input
                 type="number"
                 min="0"

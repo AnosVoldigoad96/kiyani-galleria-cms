@@ -56,6 +56,11 @@ export type ProductPayload = {
   is_top_rated: boolean;
   is_deal_of_the_day: boolean;
   status: RecordStatus;
+  has_sizes: boolean;
+  sizes: Array<{ size: string; price: number }>;
+  has_quality_options: boolean;
+  local_price_pkr: number | null;
+  imported_price_pkr: number | null;
   created_by?: string | null;
   updated_by?: string | null;
 } & SeoPayload;

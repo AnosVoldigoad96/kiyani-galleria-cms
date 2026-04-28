@@ -30,6 +30,11 @@ export type SubcategoryFormState = {
   categoryId: string;
 } & SeoFormFields;
 
+export type ProductSizeOption = {
+  size: string;
+  price: string;
+};
+
 export type ProductFormState = {
   sku: string;
   name: string;
@@ -54,4 +59,9 @@ export type ProductFormState = {
   imageAlt: string;
   videoUrl: string;
   featuresText: string;
+  hasSizes: boolean;
+  sizes: ProductSizeOption[];
+  hasQualityOptions: boolean;
+  localPricePkr: string;
+  importedPricePkr: string;
 } & SeoFormFields;

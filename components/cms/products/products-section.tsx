@@ -164,6 +164,15 @@ export function ProductsSection({
         is_top_rated: state.isTopRated,
         is_deal_of_the_day: state.isDealOfDay,
         status: state.status,
+        has_sizes: state.hasSizes,
+        sizes: state.hasSizes
+          ? state.sizes
+              .filter((s) => s.size.trim())
+              .map((s) => ({ size: s.size.trim(), price: Number(s.price || 0) }))
+          : [],
+        has_quality_options: state.hasQualityOptions,
+        local_price_pkr: state.hasQualityOptions && state.localPricePkr ? Number(state.localPricePkr) : null,
+        imported_price_pkr: state.hasQualityOptions && state.importedPricePkr ? Number(state.importedPricePkr) : null,
         created_by: user?.id ?? null,
         updated_by: user?.id ?? null,
         ...seoPayloadFromForm(state),

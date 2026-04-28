@@ -121,6 +121,18 @@ export function ProductFormModal({
     }
   };
 
+  const handleRemoveVideo = async () => {
+    if (!formState.videoUrl) return;
+    const fileId = extractFileId(formState.videoUrl);
+    if (fileId) {
+      await deleteProductImage(fileId).catch((err) => {
+        console.error("Video delete failed:", err);
+      });
+    }
+    setFormState((prev) => ({ ...prev, videoUrl: "" }));
+    setVideoFile(null);
+  };
+
   const handleGenerateDescription = async () => {
     if (!formState.name.trim()) return;
     setIsGeneratingDesc(true);
@@ -684,7 +696,7 @@ export function ProductFormModal({
                 <span>Video attached</span>
                 <button
                   type="button"
-                  onClick={() => setFormState((prev) => ({ ...prev, videoUrl: "" }))}
+                  onClick={() => void handleRemoveVideo()}
                   className="ml-auto text-red-500 hover:text-red-700 text-[10px] font-bold uppercase"
                 >
                   Remove

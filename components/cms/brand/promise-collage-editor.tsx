@@ -44,7 +44,8 @@ export function PromiseCollageEditor({
 }) {
   return (
     <ImageCollectionEditor
-      title="Promise Section Collage"
+      eyebrow="Homepage section"
+      title="Promise collage"
       description='4 photos arranged as an asymmetrical collage on the homepage "The Kiyani Promise" section.'
       settingKey="promise_collage"
       slots={SLOTS}

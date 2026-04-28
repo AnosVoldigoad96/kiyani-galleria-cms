@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { GripVertical, Plus, Save, Trash2, Upload } from "lucide-react";
+import { ChevronDown, GripVertical, Plus, Save, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,7 @@ export function HeroSlidesEditor({ initialSlides, onRefresh }: HeroSlidesEditorP
   );
   const [isSaving, setIsSaving] = useState(false);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
+  const [collapsed, setCollapsed] = useState(true);
 
   // Sync when initial slides arrive
   useEffect(() => {
@@ -127,50 +128,74 @@ export function HeroSlidesEditor({ initialSlides, onRefresh }: HeroSlidesEditorP
     }
   };
 
+  const filledCount = slides.filter((s) => s.imageUrl && s.title).length;
+
   return (
-    <section className={surfaceClassName()}>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h3 className="text-lg font-semibold text-foreground">Homepage Hero Slides</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
+    <section className={surfaceClassName("p-5 sm:p-8")}>
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        className="w-full flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4 text-left"
+      >
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--muted-foreground)]">
+            Homepage section
+          </p>
+          <h2 className="mt-2 text-2xl sm:text-3xl font-bold text-[var(--foreground)] flex items-center gap-3">
+            Hero slides
+            <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+              {filledCount} {filledCount === 1 ? "slide" : "slides"}
+            </span>
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
             Manage rotating hero images and content. Slides auto-rotate every 5 seconds.
           </p>
         </div>
-        <Button
-          onClick={handleSave}
-          disabled={isSaving}
-          className="rounded-full bg-foreground text-white hover:bg-black"
-        >
-          <Save className="size-4 mr-2" />
-          {isSaving ? "Saving..." : "Save Changes"}
-        </Button>
-      </div>
+        <ChevronDown
+          className={`size-5 text-muted-foreground transition-transform ${collapsed ? "" : "rotate-180"}`}
+        />
+      </button>
 
-      <div className="space-y-6">
-        {slides.map((slide, index) => (
-          <SlideCard
-            key={index}
-            slide={slide}
-            index={index}
-            isFirst={index === 0}
-            isLast={index === slides.length - 1}
-            isUploading={uploadingIndex === index}
-            onUpdate={(patch) => updateSlide(index, patch)}
-            onUpload={(file) => handleImageUpload(index, file)}
-            onRemove={() => removeSlide(index)}
-            onMove={(dir) => moveSlide(index, dir)}
-          />
-        ))}
+      {!collapsed && (
+        <>
+          <div className="mt-6 flex justify-end">
+            <Button
+              onClick={handleSave}
+              disabled={isSaving}
+              className="rounded-lg bg-foreground px-5 text-xs font-bold text-white hover:bg-foreground/90"
+            >
+              <Save className="mr-2 size-4" />
+              {isSaving ? "Saving..." : "Save changes"}
+            </Button>
+          </div>
 
-        <button
-          type="button"
-          onClick={addSlide}
-          className="w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border py-8 text-sm font-medium text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
-        >
-          <Plus className="size-4" />
-          Add another slide
-        </button>
-      </div>
+          <div className="mt-6 space-y-6">
+            {slides.map((slide, index) => (
+              <SlideCard
+                key={index}
+                slide={slide}
+                index={index}
+                isFirst={index === 0}
+                isLast={index === slides.length - 1}
+                isUploading={uploadingIndex === index}
+                onUpdate={(patch) => updateSlide(index, patch)}
+                onUpload={(file) => handleImageUpload(index, file)}
+                onRemove={() => removeSlide(index)}
+                onMove={(dir) => moveSlide(index, dir)}
+              />
+            ))}
+
+            <button
+              type="button"
+              onClick={addSlide}
+              className="w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border py-8 text-sm font-medium text-muted-foreground hover:border-primary/50 hover:text-primary transition-colors"
+            >
+              <Plus className="size-4" />
+              Add another slide
+            </button>
+          </div>
+        </>
+      )}
     </section>
   );
 }

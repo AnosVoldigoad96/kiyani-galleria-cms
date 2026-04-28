@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { Save, Trash2, Upload } from "lucide-react";
+import { ChevronDown, Save, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,6 @@ export type CollectionImage = {
 };
 
 export type SlotConfig = {
-  /** Index into the images array (0-based). */
   index: number;
   label: string;
   hint: string;
@@ -29,7 +28,9 @@ export type SlotConfig = {
 };
 
 type Props = {
-  /** Section heading shown at the top of the card. */
+  /** Eyebrow label shown above the heading (uppercase). */
+  eyebrow: string;
+  /** Section heading. */
   title: string;
   /** Helper text under the title. */
   description: string;
@@ -41,6 +42,8 @@ type Props = {
   initialImages: CollectionImage[];
   /** Aspect ratio of the live preview frame. Defaults to square. */
   previewAspect?: string;
+  /** Whether the section starts collapsed. Defaults to true. */
+  defaultCollapsed?: boolean;
   onRefresh?: () => void;
 };
 
@@ -53,13 +56,19 @@ function emptyImage(): CollectionImage {
   return { imageUrl: "", alt: "" };
 }
 
+function isExternalUrl(url: string): boolean {
+  return /^https?:\/\//.test(url);
+}
+
 export function ImageCollectionEditor({
+  eyebrow,
   title,
   description,
   settingKey,
   slots,
   initialImages,
   previewAspect = "aspect-square",
+  defaultCollapsed = true,
   onRefresh,
 }: Props) {
   const slotCount = slots.length;
@@ -69,6 +78,7 @@ export function ImageCollectionEditor({
   const [images, setImages] = useState<CollectionImage[]>(padded.slice(0, slotCount));
   const [isSaving, setIsSaving] = useState(false);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
   useEffect(() => {
     if (initialImages.length) {
@@ -125,72 +135,108 @@ export function ImageCollectionEditor({
     }
   };
 
+  const filledCount = images.filter((img) => img.imageUrl).length;
+
   return (
-    <section className={surfaceClassName()}>
-      <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
-        <div>
-          <h3 className="text-lg font-semibold text-foreground">{title}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+    <section className={surfaceClassName("p-5 sm:p-8")}>
+      {/* Header — matches brand-section style, clickable to collapse */}
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        className="w-full flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4 text-left"
+      >
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold uppercase tracking-[0.25em] text-[var(--muted-foreground)]">
+            {eyebrow}
+          </p>
+          <h2 className="mt-2 text-2xl sm:text-3xl font-bold text-[var(--foreground)] flex items-center gap-3">
+            {title}
+            <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+              {filledCount}/{slotCount}
+            </span>
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">{description}</p>
         </div>
-        <Button
-          onClick={handleSave}
-          disabled={isSaving}
-          className="rounded-full bg-foreground text-white hover:bg-black"
-        >
-          <Save className="size-4 mr-2" />
-          {isSaving ? "Saving..." : "Save Changes"}
-        </Button>
-      </div>
+        <ChevronDown
+          className={`size-5 text-muted-foreground transition-transform ${collapsed ? "" : "rotate-180"}`}
+        />
+      </button>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr]">
-        {/* Live preview */}
-        <div className="space-y-2">
-          <p className={labelClass}>Live preview</p>
-          <div className={`relative w-full ${previewAspect} rounded-2xl bg-muted/30 border border-border p-2`}>
-            {slots.map((slot) => {
-              const img = images[slot.index];
-              return (
-                <div
-                  key={slot.index}
-                  className={`${slot.previewClass} overflow-hidden bg-primary/5 border border-border/50 shadow-sm`}
-                >
-                  {img?.imageUrl ? (
-                    <Image
-                      src={img.imageUrl}
-                      alt={img.alt || `Slot ${slot.index + 1}`}
-                      fill
-                      sizes="200px"
-                      className="object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-[10px] uppercase tracking-widest text-muted-foreground/60">
-                      Slot {slot.index + 1}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+      {!collapsed && (
+        <>
+          <div className="mt-6 flex justify-end">
+            <Button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="rounded-lg bg-foreground px-5 text-xs font-bold text-white hover:bg-foreground/90"
+            >
+              <Save className="mr-2 size-4" />
+              {isSaving ? "Saving..." : "Save changes"}
+            </Button>
           </div>
-        </div>
 
-        {/* Slot editors */}
-        <div className="space-y-4">
-          {slots.map((slot) => (
-            <SlotEditor
-              key={slot.index}
-              label={slot.label}
-              hint={slot.hint}
-              image={images[slot.index] ?? emptyImage()}
-              isUploading={uploadingIndex === slot.index}
-              onUpload={(file) => handleUpload(slot.index, file)}
-              onRemove={() => handleRemove(slot.index)}
-              onAltChange={(alt) => updateImage(slot.index, { alt })}
-            />
-          ))}
-        </div>
-      </div>
+          <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr]">
+            {/* Live preview */}
+            <div className="space-y-2">
+              <p className={labelClass}>Live preview</p>
+              <div className={`relative w-full ${previewAspect} rounded-2xl bg-muted/40 border border-border p-2`}>
+                {slots.map((slot) => {
+                  const img = images[slot.index];
+                  return (
+                    <div
+                      key={slot.index}
+                      className={`${slot.previewClass} overflow-hidden bg-primary/5 border border-border/50 shadow-sm`}
+                    >
+                      {img?.imageUrl ? (
+                        <PreviewImage url={img.imageUrl} alt={img.alt || `Slot ${slot.index + 1}`} />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-[10px] uppercase tracking-widest text-muted-foreground/60">
+                          Slot {slot.index + 1}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Slot editors */}
+            <div className="space-y-3">
+              {slots.map((slot) => (
+                <SlotEditor
+                  key={slot.index}
+                  label={slot.label}
+                  hint={slot.hint}
+                  image={images[slot.index] ?? emptyImage()}
+                  isUploading={uploadingIndex === slot.index}
+                  onUpload={(file) => handleUpload(slot.index, file)}
+                  onRemove={() => handleRemove(slot.index)}
+                  onAltChange={(alt) => updateImage(slot.index, { alt })}
+                />
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </section>
   );
+}
+
+/**
+ * Renders any image URL safely:
+ * - Internal Nhost URLs → Next.js <Image> for optimization
+ * - External fallback URLs (Unsplash defaults) → plain <img> to avoid
+ *   needing every external host whitelisted
+ */
+function PreviewImage({ url, alt }: { url: string; alt: string }) {
+  if (isExternalUrl(url) && !url.includes("nhost.run")) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={url} alt={alt} className="absolute inset-0 h-full w-full object-cover" />
+    );
+  }
+  return <Image src={url} alt={alt} fill sizes="200px" className="object-cover" />;
 }
 
 function SlotEditor({
@@ -217,13 +263,7 @@ function SlotEditor({
       <div className="flex items-start gap-4">
         <div className="relative h-20 w-20 shrink-0 rounded-lg overflow-hidden bg-muted border border-border">
           {image.imageUrl ? (
-            <Image
-              src={image.imageUrl}
-              alt={image.alt || label}
-              fill
-              sizes="80px"
-              className="object-cover"
-            />
+            <PreviewImage url={image.imageUrl} alt={image.alt || label} />
           ) : (
             <div className="flex h-full items-center justify-center text-[9px] text-muted-foreground/60">
               Empty
@@ -237,7 +277,7 @@ function SlotEditor({
             <p className="text-[11px] text-muted-foreground italic">{hint}</p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <input
               ref={fileInputRef}
               type="file"

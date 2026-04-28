@@ -45,7 +45,8 @@ export function StoryImagesEditor({
 }) {
   return (
     <ImageCollectionEditor
-      title="About / Story Page Images"
+      eyebrow="Story page"
+      title="About page images"
       description="4 photos shown across the story page: the banner, the heritage portrait, and two grid tiles."
       settingKey="story_images"
       slots={SLOTS}

@@ -149,6 +149,8 @@ type CmsGraphqlResponse = {
     quantity: number;
     unit_price_pkr: number;
     total_price_pkr: number;
+    selected_size: string | null;
+    selected_quality: string | null;
   }>;
   custom_requests: Array<{
     id: string;
@@ -391,6 +393,8 @@ const CMS_QUERY = `
       quantity
       unit_price_pkr
       total_price_pkr
+      selected_size
+      selected_quality
     }
     custom_requests(order_by: { created_at: desc }) {
       id
@@ -550,6 +554,8 @@ function mapOrders(
       totalPricePkr: Number(item.total_price_pkr ?? 0),
       unitPriceLabel: formatPkr(item.unit_price_pkr),
       totalPriceLabel: formatPkr(item.total_price_pkr),
+      selectedSize: item.selected_size ?? null,
+      selectedQuality: item.selected_quality ?? null,
     }));
 
     return {

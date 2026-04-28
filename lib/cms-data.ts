@@ -107,6 +107,8 @@ export type CmsOrderItem = {
   totalPricePkr: number;
   unitPriceLabel: string;
   totalPriceLabel: string;
+  selectedSize: string | null;
+  selectedQuality: string | null;
 };
 
 export type CmsOrder = {

@@ -75,6 +75,7 @@ type CmsGraphqlResponse = {
     image_url: string | null;
     image_alt: string | null;
     video_url: string | null;
+    gallery_images: Array<{ url: string; alt: string }> | null;
     description: string;
     has_sizes: boolean;
     sizes: Array<{
@@ -326,6 +327,7 @@ const CMS_QUERY = `
       image_url
       image_alt
       video_url
+      gallery_images
       description
       has_sizes
       sizes
@@ -751,6 +753,12 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     imageUrl: product.image_url,
     imageAlt: product.image_alt,
     videoUrl: product.video_url,
+    galleryImages: Array.isArray(product.gallery_images)
+      ? product.gallery_images.map((g) => ({
+          url: String(g?.url ?? ""),
+          alt: String(g?.alt ?? ""),
+        }))
+      : [],
     categoryId: product.category_id,
     category: categoryMap.get(product.category_id)?.name ?? "Unassigned",
     subcategoryId: product.subcategory_id,

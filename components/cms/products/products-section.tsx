@@ -151,6 +151,9 @@ export function ProductsSection({
         image_url: imageUrl,
         image_alt: state.imageAlt ? state.imageAlt.trim() : null,
         video_url: videoUrl,
+        gallery_images: state.galleryImages
+          .filter((g) => g.imageUrl)
+          .map((g) => ({ url: g.imageUrl, alt: g.alt.trim() })),
         price_pkr: Number(state.pricePkr || 0),
         our_price_pkr: Number(state.ourPricePkr || 0),
         rating: Number(state.rating || 0),

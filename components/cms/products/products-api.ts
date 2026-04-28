@@ -43,6 +43,7 @@ export type ProductPayload = {
   image_url: string | null;
   image_alt: string | null;
   video_url: string | null;
+  gallery_images: Array<{ url: string; alt: string }>;
   price_pkr: number;
   our_price_pkr: number;
   rating: number;

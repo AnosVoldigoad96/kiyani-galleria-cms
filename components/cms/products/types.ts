@@ -63,6 +63,8 @@ export type ProductFormState = {
   imageUrl: string;
   imageAlt: string;
   videoUrl: string;
+  /** Additional gallery images (besides the cover image_url). */
+  galleryImages: Array<{ imageUrl: string; alt: string }>;
   featuresText: string;
   hasSizes: boolean;
   sizes: ProductSizeOption[];

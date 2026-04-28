@@ -49,6 +49,7 @@ export type CmsProduct = {
   imageUrl?: string | null;
   imageAlt?: string | null;
   videoUrl?: string | null;
+  galleryImages: Array<{ url: string; alt: string }>;
   categoryId: string;
   category: string;
   subcategoryId?: string | null;

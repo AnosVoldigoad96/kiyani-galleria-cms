@@ -165,6 +165,7 @@ export function productToFormState(
     imageUrl: product?.imageUrl ?? "",
     imageAlt: product?.imageAlt ?? product?.imageLabel ?? "",
     videoUrl: product?.videoUrl ?? "",
+    galleryImages: (product?.galleryImages ?? []).map((g) => ({ imageUrl: g.url, alt: g.alt })),
     featuresText: featuresToText(product?.features),
     hasSizes: product?.hasSizes ?? false,
     sizes: (product?.sizes ?? []).map((s) => ({

@@ -8,7 +8,13 @@ import type { CmsCategory, CmsProduct, CmsSubcategory } from "@/lib/cms-data";
 
 import { Trash2, ImagePlus } from "lucide-react";
 import { AiDescriptionButton } from "./ai-description-button";
-import { deleteProductImage, extractFileId, generateDescription, generateSeo } from "./products-api";
+import {
+  deleteProductImage,
+  extractFileId,
+  generateDescription,
+  generateSeo,
+  uploadProductImage,
+} from "./products-api";
 import { SeoFieldsSection } from "./seo-fields-section";
 import type { ProductFormState, RecordStatus } from "./types";
 import { fromRecordStatus, parseFeatures, productToFormState, slugify } from "./utils";
@@ -51,8 +57,51 @@ export function ProductFormModal({
   const [isGeneratingSeo, setIsGeneratingSeo] = useState(false);
   const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
   const [isDeletingImage, setIsDeletingImage] = useState(false);
+  const [isUploadingGallery, setIsUploadingGallery] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const slugTouched = useRef(false);
+
+  const handleGalleryUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setIsUploadingGallery(true);
+    try {
+      const uploads = await Promise.all(
+        Array.from(files).map((file) => uploadProductImage(file)),
+      );
+      setFormState((prev) => ({
+        ...prev,
+        galleryImages: [
+          ...prev.galleryImages,
+          ...uploads.map((u) => ({ imageUrl: u.url, alt: "" })),
+        ],
+      }));
+    } catch (err) {
+      console.error("Gallery upload failed:", err);
+    } finally {
+      setIsUploadingGallery(false);
+      if (galleryInputRef.current) galleryInputRef.current.value = "";
+    }
+  };
+
+  const handleRemoveGalleryImage = async (index: number) => {
+    const target = formState.galleryImages[index];
+    if (target?.imageUrl) {
+      const fileId = extractFileId(target.imageUrl);
+      if (fileId) await deleteProductImage(fileId).catch(() => {});
+    }
+    setFormState((prev) => ({
+      ...prev,
+      galleryImages: prev.galleryImages.filter((_, i) => i !== index),
+    }));
+  };
+
+  const updateGalleryAlt = (index: number, alt: string) => {
+    setFormState((prev) => ({
+      ...prev,
+      galleryImages: prev.galleryImages.map((g, i) => (i === index ? { ...g, alt } : g)),
+    }));
+  };
 
   const handleDeleteImage = async () => {
     if (!formState.imageUrl) return;
@@ -644,6 +693,67 @@ export function ProductFormModal({
             )}
           </div>
         </div>
+      </div>
+
+      {/* Gallery — additional product images beyond the cover */}
+      <div className="space-y-3 rounded-2xl border border-[var(--border)]/50 bg-slate-50/50 p-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-sm font-bold text-[var(--foreground)]">Additional gallery images</p>
+            <p className="text-[11px] text-[var(--muted-foreground)] mt-0.5">
+              Extra angles or detail shots. Cover image (above) is shown first; these appear after.
+            </p>
+          </div>
+          <input
+            ref={galleryInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(event) => void handleGalleryUpload(event.target.files)}
+          />
+          <button
+            type="button"
+            onClick={() => galleryInputRef.current?.click()}
+            disabled={isUploadingGallery}
+            className="flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50"
+          >
+            {isUploadingGallery ? "Uploading..." : "+ Add images"}
+          </button>
+        </div>
+
+        {formState.galleryImages.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic">No additional images yet.</p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {formState.galleryImages.map((img, idx) => (
+              <div key={idx} className="rounded-xl border border-border bg-white p-2 space-y-2">
+                <div className="relative aspect-square rounded-lg overflow-hidden bg-muted border border-border/50">
+                  <img
+                    src={img.imageUrl}
+                    alt={img.alt || `Gallery image ${idx + 1}`}
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleRemoveGalleryImage(idx)}
+                    className="absolute top-1.5 right-1.5 size-7 rounded-full bg-white/90 backdrop-blur text-red-600 hover:bg-red-50 flex items-center justify-center text-sm shadow"
+                    aria-label="Remove image"
+                  >
+                    ×
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={img.alt}
+                  onChange={(e) => updateGalleryAlt(idx, e.target.value)}
+                  placeholder="Alt text (optional)"
+                  className={`${inputClass} !mt-0 !text-xs`}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <label className="block">

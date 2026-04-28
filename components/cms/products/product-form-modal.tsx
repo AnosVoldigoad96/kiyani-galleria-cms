@@ -368,20 +368,34 @@ export function ProductFormModal({
         Discount enabled
       </label>
 
-      {/* Sizes */}
+      {/* Variant options: sizes and/or yarn quality */}
       <div className="space-y-3">
-        <label className="flex items-center gap-3 rounded-xl border border-[var(--border)]/50 bg-white px-3 py-2 text-sm text-[var(--foreground)]">
-          <input
-            type="checkbox"
-            checked={formState.hasSizes}
-            onChange={(event) => handleChange("hasSizes", event.target.checked)}
-          />
-          Multiple sizes available
-        </label>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <label className="flex items-center gap-3 rounded-xl border border-[var(--border)]/50 bg-white px-3 py-2 text-sm text-[var(--foreground)]">
+            <input
+              type="checkbox"
+              checked={formState.hasSizes}
+              onChange={(event) => handleChange("hasSizes", event.target.checked)}
+            />
+            Multiple sizes available
+          </label>
+          <label className="flex items-center gap-3 rounded-xl border border-[var(--border)]/50 bg-white px-3 py-2 text-sm text-[var(--foreground)]">
+            <input
+              type="checkbox"
+              checked={formState.hasQualityOptions}
+              onChange={(event) => handleChange("hasQualityOptions", event.target.checked)}
+            />
+            Yarn quality (Local vs Imported)
+          </label>
+        </div>
+
+        {/* Sizes editor */}
         {formState.hasSizes && (
           <div className="space-y-2 rounded-xl border border-[var(--border)]/50 bg-slate-50/50 p-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--muted-foreground)]">
-              Size options (each with its own price)
+              {formState.hasQualityOptions
+                ? "Sizes — enter local & imported yarn price for each"
+                : "Sizes — each with its own price"}
             </p>
             {formState.sizes.length === 0 && (
               <p className="text-xs text-muted-foreground italic">No sizes added yet.</p>
@@ -404,24 +418,67 @@ export function ProductFormModal({
                     placeholder="Size (e.g. Small, A4, 12 inch)"
                   />
                 </label>
-                <label className="block sm:w-36 shrink-0">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--muted-foreground)] sm:hidden">
-                    Price (PKR)
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={opt.price}
-                    onChange={(e) => {
-                      const next = [...formState.sizes];
-                      next[idx] = { ...next[idx], price: e.target.value };
-                      setFormState((p) => ({ ...p, sizes: next }));
-                    }}
-                    className={`${inputClass} !mt-1 sm:!mt-0`}
-                    placeholder="Price"
-                  />
-                </label>
+
+                {formState.hasQualityOptions ? (
+                  <>
+                    <label className="block sm:w-32 shrink-0">
+                      <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--muted-foreground)] sm:hidden">
+                        Local (PKR)
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={opt.localPrice}
+                        onChange={(e) => {
+                          const next = [...formState.sizes];
+                          next[idx] = { ...next[idx], localPrice: e.target.value };
+                          setFormState((p) => ({ ...p, sizes: next }));
+                        }}
+                        className={`${inputClass} !mt-1 sm:!mt-0`}
+                        placeholder="Local"
+                      />
+                    </label>
+                    <label className="block sm:w-32 shrink-0">
+                      <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--muted-foreground)] sm:hidden">
+                        Imported (PKR)
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={opt.importedPrice}
+                        onChange={(e) => {
+                          const next = [...formState.sizes];
+                          next[idx] = { ...next[idx], importedPrice: e.target.value };
+                          setFormState((p) => ({ ...p, sizes: next }));
+                        }}
+                        className={`${inputClass} !mt-1 sm:!mt-0`}
+                        placeholder="Imported"
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <label className="block sm:w-36 shrink-0">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[var(--muted-foreground)] sm:hidden">
+                      Price (PKR)
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={opt.price}
+                      onChange={(e) => {
+                        const next = [...formState.sizes];
+                        next[idx] = { ...next[idx], price: e.target.value };
+                        setFormState((p) => ({ ...p, sizes: next }));
+                      }}
+                      className={`${inputClass} !mt-1 sm:!mt-0`}
+                      placeholder="Price"
+                    />
+                  </label>
+                )}
+
                 <button
                   type="button"
                   onClick={() =>
@@ -437,7 +494,10 @@ export function ProductFormModal({
             <button
               type="button"
               onClick={() =>
-                setFormState((p) => ({ ...p, sizes: [...p.sizes, { size: "", price: "" }] }))
+                setFormState((p) => ({
+                  ...p,
+                  sizes: [...p.sizes, { size: "", price: "", localPrice: "", importedPrice: "" }],
+                }))
               }
               className="mt-2 w-full rounded-lg border border-dashed border-[var(--border)] py-2 text-xs font-semibold text-muted-foreground hover:border-primary hover:text-primary"
             >
@@ -445,19 +505,9 @@ export function ProductFormModal({
             </button>
           </div>
         )}
-      </div>
 
-      {/* Quality options */}
-      <div className="space-y-3">
-        <label className="flex items-center gap-3 rounded-xl border border-[var(--border)]/50 bg-white px-3 py-2 text-sm text-[var(--foreground)]">
-          <input
-            type="checkbox"
-            checked={formState.hasQualityOptions}
-            onChange={(event) => handleChange("hasQualityOptions", event.target.checked)}
-          />
-          Yarn quality options (Local vs Imported)
-        </label>
-        {formState.hasQualityOptions && (
+        {/* Standalone yarn quality (only when sizes is OFF) */}
+        {formState.hasQualityOptions && !formState.hasSizes && (
           <div className="grid gap-3 rounded-xl border border-[var(--border)]/50 bg-slate-50/50 p-4 sm:grid-cols-2">
             <label className="block">
               <span className={labelClass}>Local yarn price (PKR)</span>

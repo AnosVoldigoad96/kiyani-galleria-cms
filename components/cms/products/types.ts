@@ -32,7 +32,12 @@ export type SubcategoryFormState = {
 
 export type ProductSizeOption = {
   size: string;
+  /** Default price (used when quality options are NOT enabled). */
   price: string;
+  /** Local yarn price for this size (used when quality options ARE enabled). */
+  localPrice: string;
+  /** Imported yarn price for this size (used when quality options ARE enabled). */
+  importedPrice: string;
 };
 
 export type ProductFormState = {

@@ -68,7 +68,12 @@ export type CmsProduct = {
   stockQuantity: number;
   stockLabel: string | null;
   hasSizes: boolean;
-  sizes: Array<{ size: string; price: number }>;
+  sizes: Array<{
+    size: string;
+    price: number;
+    localPrice: number | null;
+    importedPrice: number | null;
+  }>;
   hasQualityOptions: boolean;
   localPricePkr: number | null;
   importedPricePkr: number | null;

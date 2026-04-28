@@ -168,11 +168,19 @@ export function ProductsSection({
         sizes: state.hasSizes
           ? state.sizes
               .filter((s) => s.size.trim())
-              .map((s) => ({ size: s.size.trim(), price: Number(s.price || 0) }))
+              .map((s) => ({
+                size: s.size.trim(),
+                price: Number(s.price || 0),
+                localPrice: state.hasQualityOptions && s.localPrice ? Number(s.localPrice) : null,
+                importedPrice: state.hasQualityOptions && s.importedPrice ? Number(s.importedPrice) : null,
+              }))
           : [],
         has_quality_options: state.hasQualityOptions,
-        local_price_pkr: state.hasQualityOptions && state.localPricePkr ? Number(state.localPricePkr) : null,
-        imported_price_pkr: state.hasQualityOptions && state.importedPricePkr ? Number(state.importedPricePkr) : null,
+        // Top-level local/imported prices only apply when quality is enabled WITHOUT sizes
+        local_price_pkr:
+          state.hasQualityOptions && !state.hasSizes && state.localPricePkr ? Number(state.localPricePkr) : null,
+        imported_price_pkr:
+          state.hasQualityOptions && !state.hasSizes && state.importedPricePkr ? Number(state.importedPricePkr) : null,
         created_by: user?.id ?? null,
         updated_by: user?.id ?? null,
         ...seoPayloadFromForm(state),

@@ -57,7 +57,12 @@ export type ProductPayload = {
   is_deal_of_the_day: boolean;
   status: RecordStatus;
   has_sizes: boolean;
-  sizes: Array<{ size: string; price: number }>;
+  sizes: Array<{
+    size: string;
+    price: number;
+    localPrice?: number | null;
+    importedPrice?: number | null;
+  }>;
   has_quality_options: boolean;
   local_price_pkr: number | null;
   imported_price_pkr: number | null;

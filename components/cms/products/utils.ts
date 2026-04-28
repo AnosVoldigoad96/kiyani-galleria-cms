@@ -167,7 +167,12 @@ export function productToFormState(
     videoUrl: product?.videoUrl ?? "",
     featuresText: featuresToText(product?.features),
     hasSizes: product?.hasSizes ?? false,
-    sizes: (product?.sizes ?? []).map((s) => ({ size: s.size, price: String(s.price) })),
+    sizes: (product?.sizes ?? []).map((s) => ({
+      size: s.size,
+      price: String(s.price ?? ""),
+      localPrice: s.localPrice != null ? String(s.localPrice) : "",
+      importedPrice: s.importedPrice != null ? String(s.importedPrice) : "",
+    })),
     hasQualityOptions: product?.hasQualityOptions ?? false,
     localPricePkr: product?.localPricePkr != null ? String(product.localPricePkr) : "",
     importedPricePkr: product?.importedPricePkr != null ? String(product.importedPricePkr) : "",

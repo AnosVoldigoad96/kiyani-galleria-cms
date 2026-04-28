@@ -75,7 +75,12 @@ type CmsGraphqlResponse = {
     video_url: string | null;
     description: string;
     has_sizes: boolean;
-    sizes: Array<{ size: string; price: number }> | null;
+    sizes: Array<{
+      size: string;
+      price: number;
+      localPrice?: number | null;
+      importedPrice?: number | null;
+    }> | null;
     has_quality_options: boolean;
     local_price_pkr: number | null;
     imported_price_pkr: number | null;
@@ -771,7 +776,12 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     stockLabel: product.stock_label ?? null,
     hasSizes: Boolean(product.has_sizes),
     sizes: Array.isArray(product.sizes)
-      ? product.sizes.map((s) => ({ size: String(s.size ?? ""), price: Number(s.price ?? 0) }))
+      ? product.sizes.map((s) => ({
+          size: String(s.size ?? ""),
+          price: Number(s.price ?? 0),
+          localPrice: s.localPrice == null ? null : Number(s.localPrice),
+          importedPrice: s.importedPrice == null ? null : Number(s.importedPrice),
+        }))
       : [],
     hasQualityOptions: Boolean(product.has_quality_options),
     localPricePkr: product.local_price_pkr === null || product.local_price_pkr === undefined ? null : Number(product.local_price_pkr),

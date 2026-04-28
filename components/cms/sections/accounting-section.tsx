@@ -116,10 +116,10 @@ export function AccountingSection({
         <ChartOfAccountsTab accounts={ledgerAccounts} />
       )}
       {tab === "Payment Methods" && (
-        <PaymentMethodsTab methods={paymentMethods} onRefresh={onRefresh} />
+        <PaymentMethodsTab methods={paymentMethods} ledgerAccounts={ledgerAccounts} onRefresh={onRefresh} />
       )}
       {tab === "Reports" && (
-        <ReportsTab ledgerAccounts={ledgerAccounts} invoices={invoices} />
+        <ReportsTab ledgerAccounts={ledgerAccounts} invoices={invoices} journalEntries={journalEntries} />
       )}
 
       <InvoiceEditor

@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { surfaceClassName } from "@/components/cms/cms-shared";
 import { upsertBrandSetting } from "@/components/cms/brand/brand-api";
-import { uploadProductImage, deleteProductImage, extractFileId } from "@/components/cms/products/products-api";
+import { uploadBrandImage, deleteProductImage, extractFileId } from "@/components/cms/products/products-api";
 
 export type HeroSlide = {
   imageUrl: string;
@@ -90,7 +90,7 @@ export function HeroSlidesEditor({ initialSlides, onRefresh }: HeroSlidesEditorP
         const oldFileId = extractFileId(old);
         if (oldFileId) await deleteProductImage(oldFileId).catch(() => {});
       }
-      const upload = await uploadProductImage(file);
+      const upload = await uploadBrandImage(file);
       updateSlide(index, { imageUrl: upload.url });
       toast.success("Image uploaded.");
     } catch (err) {

@@ -1,6 +1,15 @@
 "use client";
 
 import { requestAdminGraphql } from "@/lib/admin-graphql-client";
+import {
+  createInvoice,
+  deleteInvoice,
+  issueRefund,
+  updateInvoice,
+  type InvoiceLinePayload,
+  type InvoicePayload,
+  type InvoiceStatusCode,
+} from "@/components/cms/accounting/invoice-api";
 
 export type OrderPaymentStatus = "pending" | "paid" | "failed" | "refunded";
 export type OrderFulfillmentStatus =
@@ -44,9 +53,6 @@ type UnwrapResponse<T> = {
 };
 
 const ORDER_REFERENCE_TYPE = "order";
-const CASH_ACCOUNT_CODE = "1000";
-const RECEIVABLE_ACCOUNT_CODE = "1100";
-const REVENUE_ACCOUNT_CODE = "4000";
 
 function unwrap<T>(response: UnwrapResponse<T>, message: string) {
   if (response.body.errors?.length) {
@@ -64,93 +70,25 @@ function toMoney(value: number) {
   return Number((Number.isFinite(value) ? value : 0).toFixed(2));
 }
 
-function buildInvoiceStatus(paymentStatus: OrderPaymentStatus) {
-  if (paymentStatus === "paid") {
-    return "paid";
-  }
-
-  if (paymentStatus === "pending") {
-    return "issued";
-  }
-
+function buildInvoiceStatus(paymentStatus: OrderPaymentStatus): InvoiceStatusCode {
+  if (paymentStatus === "paid") return "paid";
+  if (paymentStatus === "pending") return "issued";
+  if (paymentStatus === "refunded") return "paid"; // paid then refunded separately
   return "void";
 }
 
 function buildInvoiceAmounts(total: number, paymentStatus: OrderPaymentStatus) {
-  if (paymentStatus === "paid") {
+  if (paymentStatus === "paid" || paymentStatus === "refunded") {
     return { paid: total, balance: 0 };
   }
-
   if (paymentStatus === "pending") {
     return { paid: 0, balance: total };
   }
-
   return { paid: 0, balance: 0 };
-}
-
-function buildJournalLines(
-  total: number,
-  paymentStatus: OrderPaymentStatus,
-  cashAccountId: string,
-  receivableAccountId: string,
-  revenueAccountId: string,
-) {
-  if (paymentStatus === "failed" || total <= 0) {
-    return [] as Array<{
-      account_id: string;
-      debit_pkr: number;
-      credit_pkr: number;
-      line_order: number;
-      description: string;
-    }>;
-  }
-
-  if (paymentStatus === "refunded") {
-    return [
-      {
-        account_id: revenueAccountId,
-        debit_pkr: total,
-        credit_pkr: 0,
-        line_order: 0,
-        description: "Refund reversal for order revenue",
-      },
-      {
-        account_id: cashAccountId,
-        debit_pkr: 0,
-        credit_pkr: total,
-        line_order: 1,
-        description: "Cash refunded to customer",
-      },
-    ];
-  }
-
-  return [
-    {
-      account_id: paymentStatus === "paid" ? cashAccountId : receivableAccountId,
-      debit_pkr: total,
-      credit_pkr: 0,
-      line_order: 0,
-      description:
-        paymentStatus === "paid"
-          ? "Cash received from order"
-          : "Accounts receivable recognized",
-    },
-    {
-      account_id: revenueAccountId,
-      debit_pkr: 0,
-      credit_pkr: total,
-      line_order: 1,
-      description: "Sales revenue recognized",
-    },
-  ];
 }
 
 function buildInvoiceNo(orderNo: string) {
   return orderNo.replace(/^ORD/i, "INV");
-}
-
-function buildJournalNo(orderNo: string) {
-  return orderNo.replace(/^ORD/i, "JRN");
 }
 
 function currentIsoDate() {
@@ -207,383 +145,192 @@ async function replaceOrderItems(orderId: string, items: OrderItemPayload[]) {
   }
 }
 
-async function syncOrderAccounting(orderId: string, payload: OrderPayload, items: OrderItemPayload[]) {
-  const contextResponse = await requestAdminGraphql<{
-    accounting_accounts: Array<{ id: string; code: string }>;
-    invoices: Array<{ id: string }>;
-    journal_entries: Array<{ id: string }>;
-  }>(
-    `
-      query OrderAccountingContext($orderId: uuid!, $referenceType: String!) {
-        accounting_accounts(where: { code: { _in: ["1000", "1100", "4000"] }, is_active: { _eq: true } }) {
-          id
-          code
-        }
-        invoices(where: { order_id: { _eq: $orderId } }, limit: 1) {
-          id
-        }
-        journal_entries(
-          where: {
-            reference_type: { _eq: $referenceType }
-            reference_id: { _eq: $orderId }
-          }
-          limit: 1
-        ) {
-          id
-        }
+async function findOrderInvoiceId(orderId: string): Promise<string | null> {
+  const response = await requestAdminGraphql<{ invoices: Array<{ id: string; status: string; paid_pkr: number; total_pkr: number }> }>(
+    `query OrderInvoice($orderId: uuid!) {
+      invoices(where: { order_id: { _eq: $orderId } }, limit: 1) {
+        id status paid_pkr total_pkr
       }
-    `,
-    { orderId, referenceType: ORDER_REFERENCE_TYPE },
+    }`,
+    { orderId },
   );
+  return unwrap(response, "Failed to look up order invoice.").invoices[0]?.id ?? null;
+}
 
-  const context = unwrap(contextResponse, "Unable to load accounting context.");
-  const accountsByCode = new Map(context.accounting_accounts.map((account) => [account.code, account.id]));
-  const cashAccountId = accountsByCode.get(CASH_ACCOUNT_CODE);
-  const receivableAccountId = accountsByCode.get(RECEIVABLE_ACCOUNT_CODE);
-  const revenueAccountId = accountsByCode.get(REVENUE_ACCOUNT_CODE);
-
-  if (!cashAccountId || !receivableAccountId || !revenueAccountId) {
-    throw new Error(
-      "Missing accounting accounts (1000, 1100, 4000). Seed accounting_schema.sql first.",
-    );
-  }
-
+async function syncOrderAccounting(orderId: string, payload: OrderPayload, items: OrderItemPayload[]) {
   const total = toMoney(payload.total_pkr);
   const subtotal = toMoney(payload.subtotal_pkr);
   const discount = toMoney(payload.discount_pkr);
-  const { paid, balance } = buildInvoiceAmounts(total, payload.payment_status);
+  const shipping = toMoney(payload.shipping_pkr);
+  const { paid } = buildInvoiceAmounts(total, payload.payment_status);
   const invoiceNo = buildInvoiceNo(payload.order_no);
-  const existingInvoiceId = context.invoices[0]?.id;
-  const invoiceSet = {
+  const status = buildInvoiceStatus(payload.payment_status);
+
+  const invoicePayload: InvoicePayload = {
     invoice_no: invoiceNo,
+    order_id: orderId,
+    customer_profile_id: payload.user_id ?? null,
     customer_name: payload.customer_name,
     customer_email: payload.customer_email,
     issue_date: currentIsoDate(),
     due_date: null,
     subtotal_pkr: subtotal,
     discount_pkr: discount,
+    shipping_pkr: shipping,
     tax_pkr: 0,
     total_pkr: total,
     paid_pkr: toMoney(paid),
-    balance_pkr: toMoney(balance),
-    status: buildInvoiceStatus(payload.payment_status),
+    balance_pkr: toMoney(total - paid),
+    status,
     notes: payload.notes,
+    payment_method_id: null,
   };
 
-  let invoiceId: string | null = existingInvoiceId ?? null;
-
-  if (existingInvoiceId) {
-    // Batch: update invoice + delete old invoice lines in one request
-    const updateInvoiceResponse = await requestAdminGraphql<{
-      update_invoices_by_pk: { id: string } | null;
-      delete_invoice_lines: { affected_rows: number };
-    }>(
-      `
-        mutation UpdateInvoiceAndClearLines($id: uuid!, $set: invoices_set_input!) {
-          update_invoices_by_pk(pk_columns: { id: $id }, _set: $set) {
-            id
-          }
-          delete_invoice_lines(where: { invoice_id: { _eq: $id } }) {
-            affected_rows
-          }
-        }
-      `,
-      { id: existingInvoiceId, set: invoiceSet },
-    );
-
-    unwrap(updateInvoiceResponse, "Failed to update linked invoice.");
-  } else {
-    const insertInvoiceResponse = await requestAdminGraphql<{
-      insert_invoices_one: { id: string } | null;
-    }>(
-      `
-        mutation InsertOrderInvoice($object: invoices_insert_input!) {
-          insert_invoices_one(object: $object) {
-            id
-          }
-        }
-      `,
-      {
-        object: {
-          ...invoiceSet,
-          order_id: orderId,
-          customer_profile_id: payload.user_id ?? null,
-        },
-      },
-    );
-
-    const data = unwrap(insertInvoiceResponse, "Failed to create linked invoice.");
-    invoiceId = data.insert_invoices_one?.id ?? null;
-  }
-
-  if (!invoiceId) {
-    throw new Error("Invoice id was not returned.");
-  }
-  const ensuredInvoiceId = invoiceId;
-
-  // Build invoice line objects
-  const invoiceLineObjects = items.map((item, index) => ({
-    invoice_id: ensuredInvoiceId,
+  const invoiceLines: InvoiceLinePayload[] = items.map((item) => ({
     product_id: item.product_id,
     description: item.product_name,
     quantity: toMoney(item.quantity),
     unit_price_pkr: toMoney(item.unit_price_pkr),
     line_total_pkr: toMoney(item.total_price_pkr),
-    sort_order: index,
+    // COGS contribution unknown at this layer — set to 0. Admins can edit from Invoices tab.
+    our_cost_pkr: 0,
   }));
 
-  // Prepare journal data
-  const existingJournalId = context.journal_entries[0]?.id;
-  const journalNo = buildJournalNo(payload.order_no);
-  const journalStatus = payload.payment_status === "failed" ? "void" : "posted";
-  const journalSet = {
-    journal_no: journalNo,
-    entry_date: currentIsoDate(),
-    reference_type: ORDER_REFERENCE_TYPE,
-    reference_id: orderId,
-    memo: `Order ${payload.order_no} accounting entry`,
-    status: journalStatus,
-  };
+  const existingInvoiceId = await findOrderInvoiceId(orderId);
 
-  let journalId: string | null = existingJournalId ?? null;
-
-  // Batch: insert invoice lines + journal upsert + delete journal lines in one request
-  if (existingJournalId) {
-    if (invoiceLineObjects.length) {
-      const batchResponse = await requestAdminGraphql<{
-        insert_invoice_lines: { affected_rows: number };
-        update_journal_entries_by_pk: { id: string } | null;
-        delete_journal_lines: { affected_rows: number };
-      }>(
-        `
-          mutation BatchInvoiceLinesAndJournal(
-            $invoiceLines: [invoice_lines_insert_input!]!,
-            $journalId: uuid!,
-            $journalSet: journal_entries_set_input!
-          ) {
-            insert_invoice_lines(objects: $invoiceLines) {
-              affected_rows
-            }
-            update_journal_entries_by_pk(pk_columns: { id: $journalId }, _set: $journalSet) {
-              id
-            }
-            delete_journal_lines(where: { journal_entry_id: { _eq: $journalId } }) {
-              affected_rows
-            }
-          }
-        `,
-        { invoiceLines: invoiceLineObjects, journalId: existingJournalId, journalSet },
-      );
-
-      unwrap(batchResponse, "Failed to sync invoice lines and journal.");
-    } else {
-      // No invoice lines to insert, just update journal + delete journal lines
-      const batchResponse = await requestAdminGraphql<{
-        update_journal_entries_by_pk: { id: string } | null;
-        delete_journal_lines: { affected_rows: number };
-      }>(
-        `
-          mutation UpdateJournalAndClearLines($journalId: uuid!, $journalSet: journal_entries_set_input!) {
-            update_journal_entries_by_pk(pk_columns: { id: $journalId }, _set: $journalSet) {
-              id
-            }
-            delete_journal_lines(where: { journal_entry_id: { _eq: $journalId } }) {
-              affected_rows
-            }
-          }
-        `,
-        { journalId: existingJournalId, journalSet },
-      );
-
-      unwrap(batchResponse, "Failed to update journal.");
-    }
+  if (existingInvoiceId) {
+    await updateInvoice(existingInvoiceId, invoicePayload, invoiceLines, true);
   } else {
-    // Insert invoice lines (if any) first, then create journal
-    if (invoiceLineObjects.length) {
-      const insertLinesResponse = await requestAdminGraphql<{
-        insert_invoice_lines: { affected_rows: number };
-      }>(
-        `
-          mutation InsertInvoiceLines($objects: [invoice_lines_insert_input!]!) {
-            insert_invoice_lines(objects: $objects) {
-              affected_rows
-            }
-          }
-        `,
-        { objects: invoiceLineObjects },
-      );
+    await createInvoice(invoicePayload, invoiceLines, true);
+  }
 
-      unwrap(insertLinesResponse, "Failed to save invoice lines.");
+  // Refunded: issue a full refund journal on top of the paid invoice.
+  if (payload.payment_status === "refunded") {
+    const id = existingInvoiceId ?? (await findOrderInvoiceId(orderId));
+    if (id) {
+      await issueRefund(id, total, { reason: "Order refunded" }).catch((e: unknown) => {
+        // If a refund already exists (re-sync), the invoice's paid_pkr will be 0 and issueRefund
+        // will reject with "Refund exceeds paid amount" — that's fine, skip.
+        const msg = e instanceof Error ? e.message : String(e);
+        if (!msg.includes("exceeds paid amount")) throw e;
+      });
     }
-
-    const insertJournalResponse = await requestAdminGraphql<{
-      insert_journal_entries_one: { id: string } | null;
-    }>(
-      `
-        mutation InsertOrderJournal($object: journal_entries_insert_input!) {
-          insert_journal_entries_one(object: $object) {
-            id
-          }
-        }
-      `,
-      { object: journalSet },
-    );
-
-    const data = unwrap(insertJournalResponse, "Failed to create linked journal.");
-    journalId = data.insert_journal_entries_one?.id ?? null;
   }
-
-  if (!journalId) {
-    throw new Error("Journal id was not returned.");
-  }
-  const ensuredJournalId = journalId;
-
-  const journalLines = buildJournalLines(
-    total,
-    payload.payment_status,
-    cashAccountId,
-    receivableAccountId,
-    revenueAccountId,
-  );
-
-  if (!journalLines.length) {
-    return;
-  }
-
-  const insertJournalLinesResponse = await requestAdminGraphql<{
-    insert_journal_lines: { affected_rows: number };
-  }>(
-    `
-      mutation InsertJournalLines($objects: [journal_lines_insert_input!]!) {
-        insert_journal_lines(objects: $objects) {
-          affected_rows
-        }
-      }
-    `,
-    {
-      objects: journalLines.map((line) => ({
-        journal_entry_id: ensuredJournalId,
-        account_id: line.account_id,
-        description: line.description,
-        debit_pkr: toMoney(line.debit_pkr),
-        credit_pkr: toMoney(line.credit_pkr),
-        line_order: line.line_order,
-      })),
-    },
-  );
-
-  unwrap(insertJournalLinesResponse, "Failed to save journal lines.");
 }
 
+
 async function deleteLinkedAccounting(orderId: string) {
-  const contextResponse = await requestAdminGraphql<{
-    invoices: Array<{ id: string }>;
-    journal_entries: Array<{ id: string }>;
+  // Look up any linked invoice. Posted journals must survive order deletion as audit trail,
+  // so we void the invoice (which creates reversing journals) rather than hard-delete.
+  const response = await requestAdminGraphql<{
+    invoices: Array<{ id: string; status: string }>;
   }>(
-    `
-      query LinkedAccountingRecords($orderId: uuid!, $referenceType: String!) {
-        invoices(where: { order_id: { _eq: $orderId } }) {
-          id
-        }
-        journal_entries(
-          where: {
-            reference_type: { _eq: $referenceType }
-            reference_id: { _eq: $orderId }
-          }
-        ) {
-          id
-        }
-      }
-    `,
-    { orderId, referenceType: ORDER_REFERENCE_TYPE },
+    `query LinkedInvoices($orderId: uuid!) {
+      invoices(where: { order_id: { _eq: $orderId } }) { id status }
+    }`,
+    { orderId },
   );
+  const invoices = unwrap(response, "Failed to load linked invoices.").invoices;
 
-  const context = unwrap(contextResponse, "Failed to load linked accounting records.");
-  const invoiceIds = context.invoices.map((invoice) => invoice.id);
-  const journalIds = context.journal_entries.map((journal) => journal.id);
+  for (const inv of invoices) {
+    try {
+      // Try clean delete first. This succeeds only if no posted journals exist.
+      await deleteInvoice(inv.id);
+    } catch {
+      // Posted journals exist — void the invoice instead. The order FK (on delete set null)
+      // detaches it once the order is removed, but the invoice + reversing journal remain.
+      await requestAdminGraphql(
+        `mutation VoidInvoice($id: uuid!) {
+          update_invoices_by_pk(pk_columns: { id: $id }, _set: { status: "void" }) { id }
+        }`,
+        { id: inv.id },
+      ).then((r) => unwrap(r, "Failed to void linked invoice."));
 
-  if (invoiceIds.length) {
-    // Find all journal entries created by invoice sync (reference_type = "invoice")
-    const invJournals = await requestAdminGraphql<{ journal_entries: Array<{ id: string }> }>(
-      `query InvoiceJournals($refIds: [uuid!]!) {
-        journal_entries(where: { reference_type: { _eq: "invoice" }, reference_id: { _in: $refIds } }) { id }
-      }`,
-      { refIds: invoiceIds },
-    ).catch(() => ({ body: { data: { journal_entries: [] as Array<{ id: string }> } } }));
-
-    const invJournalIds = invJournals.body.data?.journal_entries?.map((j) => j.id) ?? [];
-
-    // Batch: delete invoice-journal lines + invoice-journals + invoice lines + invoices
-    if (invJournalIds.length) {
-      const batchResponse = await requestAdminGraphql<{
-        delete_journal_lines: { affected_rows: number };
-        delete_journal_entries: { affected_rows: number };
-        delete_invoice_lines: { affected_rows: number };
-        delete_invoices: { affected_rows: number };
+      // Reverse the sale journal via the same flow updateInvoice uses when status becomes void.
+      // Fetch the invoice payload and call updateInvoice with status=void.
+      const detail = await requestAdminGraphql<{
+        invoices_by_pk: null | {
+          invoice_no: string; order_id: string | null; customer_profile_id: string | null;
+          customer_name: string; customer_email: string | null;
+          issue_date: string; due_date: string | null;
+          subtotal_pkr: number; discount_pkr: number; shipping_pkr: number; tax_pkr: number;
+          total_pkr: number; paid_pkr: number; balance_pkr: number;
+          notes: string | null; payment_method_id: string | null;
+        };
+        invoice_lines: Array<{ product_id: string | null; description: string; quantity: number; unit_price_pkr: number; line_total_pkr: number; our_cost_pkr: number }>;
       }>(
-        `
-          mutation DeleteInvoiceAccountingBatch($invJournalIds: [uuid!]!, $invoiceIds: [uuid!]!) {
-            delete_journal_lines(where: { journal_entry_id: { _in: $invJournalIds } }) {
-              affected_rows
-            }
-            delete_journal_entries(where: { id: { _in: $invJournalIds } }) {
-              affected_rows
-            }
-            delete_invoice_lines(where: { invoice_id: { _in: $invoiceIds } }) {
-              affected_rows
-            }
-            delete_invoices(where: { id: { _in: $invoiceIds } }) {
-              affected_rows
-            }
+        `query InvoiceForVoid($id: uuid!) {
+          invoices_by_pk(id: $id) {
+            invoice_no order_id customer_profile_id customer_name customer_email
+            issue_date due_date subtotal_pkr discount_pkr shipping_pkr tax_pkr
+            total_pkr paid_pkr balance_pkr notes payment_method_id
           }
-        `,
-        { invJournalIds, invoiceIds },
-      );
-
-      unwrap(batchResponse, "Failed to delete linked invoice accounting.");
-    } else {
-      // No invoice journals — just delete invoice lines + invoices
-      const batchResponse = await requestAdminGraphql<{
-        delete_invoice_lines: { affected_rows: number };
-        delete_invoices: { affected_rows: number };
-      }>(
-        `
-          mutation DeleteInvoicesBatch($invoiceIds: [uuid!]!) {
-            delete_invoice_lines(where: { invoice_id: { _in: $invoiceIds } }) {
-              affected_rows
-            }
-            delete_invoices(where: { id: { _in: $invoiceIds } }) {
-              affected_rows
-            }
+          invoice_lines(where: { invoice_id: { _eq: $id } }, order_by: { sort_order: asc }) {
+            product_id description quantity unit_price_pkr line_total_pkr our_cost_pkr
           }
-        `,
-        { invoiceIds },
+        }`,
+        { id: inv.id },
       );
-
-      unwrap(batchResponse, "Failed to delete linked invoices.");
+      const d = unwrap(detail, "Failed to load invoice for void.");
+      if (d.invoices_by_pk) {
+        const inv2 = d.invoices_by_pk;
+        await updateInvoice(
+          inv.id,
+          {
+            invoice_no: inv2.invoice_no,
+            order_id: null, // detach from order since we're deleting it
+            customer_profile_id: inv2.customer_profile_id,
+            customer_name: inv2.customer_name,
+            customer_email: inv2.customer_email,
+            issue_date: inv2.issue_date,
+            due_date: inv2.due_date,
+            subtotal_pkr: Number(inv2.subtotal_pkr),
+            discount_pkr: Number(inv2.discount_pkr),
+            shipping_pkr: Number(inv2.shipping_pkr ?? 0),
+            tax_pkr: Number(inv2.tax_pkr),
+            total_pkr: Number(inv2.total_pkr),
+            paid_pkr: Number(inv2.paid_pkr),
+            balance_pkr: Number(inv2.balance_pkr),
+            status: "void",
+            notes: inv2.notes,
+            payment_method_id: inv2.payment_method_id,
+          },
+          d.invoice_lines.map((l) => ({
+            product_id: l.product_id,
+            description: l.description,
+            quantity: Number(l.quantity),
+            unit_price_pkr: Number(l.unit_price_pkr),
+            line_total_pkr: Number(l.line_total_pkr),
+            our_cost_pkr: Number(l.our_cost_pkr ?? 0),
+          })),
+          true,
+        );
+      }
     }
   }
 
-  if (journalIds.length) {
-    // Batch: delete journal lines + journals in one request
-    const batchResponse = await requestAdminGraphql<{
-      delete_journal_lines: { affected_rows: number };
-      delete_journal_entries: { affected_rows: number };
-    }>(
-      `
-        mutation DeleteJournalsBatch($journalIds: [uuid!]!) {
-          delete_journal_lines(where: { journal_entry_id: { _in: $journalIds } }) {
-            affected_rows
-          }
-          delete_journal_entries(where: { id: { _in: $journalIds } }) {
-            affected_rows
-          }
-        }
-      `,
-      { journalIds },
-    );
-
-    unwrap(batchResponse, "Failed to delete linked journals.");
+  // Also clean up any standalone journal entries referencing the order directly
+  // (from legacy data created before the refactor). Draft-only deletion.
+  const legacy = await requestAdminGraphql<{
+    journal_entries: Array<{ id: string; status: string }>;
+  }>(
+    `query LegacyOrderJournals($orderId: uuid!, $referenceType: String!) {
+      journal_entries(where: { reference_type: { _eq: $referenceType }, reference_id: { _eq: $orderId } }) {
+        id status
+      }
+    }`,
+    { orderId, referenceType: ORDER_REFERENCE_TYPE },
+  );
+  const rows = unwrap(legacy, "Failed to load legacy order journals.").journal_entries;
+  const draftIds = rows.filter((r) => r.status === "draft").map((r) => r.id);
+  if (draftIds.length) {
+    await requestAdminGraphql(
+      `mutation DeleteLegacyOrderJournals($ids: [uuid!]!) {
+        delete_journal_lines(where: { journal_entry_id: { _in: $ids } }) { affected_rows }
+        delete_journal_entries(where: { id: { _in: $ids } }) { affected_rows }
+      }`,
+      { ids: draftIds },
+    ).then((r) => unwrap(r, "Failed to delete legacy draft journals."));
   }
 }
 

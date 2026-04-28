@@ -9,6 +9,7 @@ export type PaymentMethodPayload = {
   account_number: string | null;
   bank_name: string | null;
   instructions: string | null;
+  cash_account_code: string | null;
   is_active: boolean;
   sort_order: number;
 };

@@ -6,6 +6,8 @@ import type {
   CmsAccountingStat,
   CmsBrandFlag,
   CmsHeroSlide,
+  CmsPromiseImage,
+  CmsStoryImage,
   CmsBrandToken,
   CmsCategory,
   CmsDashboardStat,
@@ -265,6 +267,8 @@ export type CmsDataBundle = {
   brandTokens: CmsBrandToken[];
   brandFlags: CmsBrandFlag[];
   heroSlides: CmsHeroSlide[];
+  promiseImages: CmsPromiseImage[];
+  storyImages: CmsStoryImage[];
   accountingStats: CmsAccountingStat[];
   invoices: CmsInvoice[];
   paymentMethods: CmsPaymentMethod[];
@@ -1208,6 +1212,24 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
       }))
     : [];
 
+  // Parse promise collage images from brand_settings
+  const promiseValue = settingValue("promise_collage");
+  const promiseImages: CmsPromiseImage[] = Array.isArray(promiseValue?.images)
+    ? (promiseValue.images as Array<Partial<CmsPromiseImage>>).map((img) => ({
+        imageUrl: String(img.imageUrl ?? ""),
+        alt: String(img.alt ?? ""),
+      }))
+    : [];
+
+  // Parse story page images from brand_settings
+  const storyValue = settingValue("story_images");
+  const storyImages: CmsStoryImage[] = Array.isArray(storyValue?.images)
+    ? (storyValue.images as Array<Partial<CmsStoryImage>>).map((img) => ({
+        imageUrl: String(img.imageUrl ?? ""),
+        alt: String(img.alt ?? ""),
+      }))
+    : [];
+
   return {
     stats,
     categories,
@@ -1220,6 +1242,8 @@ function mapCmsData(data: CmsGraphqlResponse): CmsDataBundle {
     brandTokens,
     brandFlags,
     heroSlides,
+    promiseImages,
+    storyImages,
     accountingStats,
     invoices,
     paymentMethods: (data.payment_methods ?? []).map((pm) => ({

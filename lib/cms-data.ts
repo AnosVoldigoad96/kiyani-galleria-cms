@@ -199,6 +199,16 @@ export type CmsHeroSlide = {
   ctaLink: string;
 };
 
+export type CmsPromiseImage = {
+  imageUrl: string;
+  alt: string;
+};
+
+export type CmsStoryImage = {
+  imageUrl: string;
+  alt: string;
+};
+
 export type CmsAccountingStat = {
   label: string;
   value: string;

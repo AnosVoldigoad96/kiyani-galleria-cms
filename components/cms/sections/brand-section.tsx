@@ -6,10 +6,18 @@ import { motion } from "framer-motion";
 import { Save } from "lucide-react";
 import { toast } from "sonner";
 
-import type { CmsBrandFlag, CmsBrandToken, CmsHeroSlide } from "@/lib/cms-data";
+import type {
+  CmsBrandFlag,
+  CmsBrandToken,
+  CmsHeroSlide,
+  CmsPromiseImage,
+  CmsStoryImage,
+} from "@/lib/cms-data";
 
 import { upsertBrandSettingsBatch } from "@/components/cms/brand/brand-api";
 import { HeroSlidesEditor } from "@/components/cms/brand/hero-slides-editor";
+import { PromiseCollageEditor } from "@/components/cms/brand/promise-collage-editor";
+import { StoryImagesEditor } from "@/components/cms/brand/story-images-editor";
 import { surfaceClassName } from "@/components/cms/cms-shared";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +25,8 @@ type BrandSectionProps = {
   brandFlags: CmsBrandFlag[];
   brandTokens: CmsBrandToken[];
   heroSlides: CmsHeroSlide[];
+  promiseImages: CmsPromiseImage[];
+  storyImages: CmsStoryImage[];
   onRefresh?: () => void;
 };
 
@@ -27,7 +37,7 @@ function isHexColor(value: string) {
   return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value.trim());
 }
 
-export function BrandSection({ brandFlags, brandTokens, heroSlides, onRefresh }: BrandSectionProps) {
+export function BrandSection({ brandFlags, brandTokens, heroSlides, promiseImages, storyImages, onRefresh }: BrandSectionProps) {
   const [tokenValues, setTokenValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(brandTokens.map((token) => [token.key, token.value])),
   );
@@ -90,6 +100,8 @@ export function BrandSection({ brandFlags, brandTokens, heroSlides, onRefresh }:
   return (
     <div className="space-y-6">
       <HeroSlidesEditor initialSlides={heroSlides} onRefresh={onRefresh} />
+      <PromiseCollageEditor initialImages={promiseImages} onRefresh={onRefresh} />
+      <StoryImagesEditor initialImages={storyImages} onRefresh={onRefresh} />
 
       <section className={surfaceClassName("p-5 sm:p-8")}>
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4">

@@ -17,8 +17,11 @@ import {
   type PaymentMethodPayload,
 } from "./payment-methods-api";
 
+import type { CmsLedgerAccount } from "@/lib/cms-data";
+
 type PaymentMethodsTabProps = {
   methods: CmsPaymentMethod[];
+  ledgerAccounts?: CmsLedgerAccount[];
   onRefresh?: () => void;
 };
 
@@ -29,6 +32,7 @@ type Draft = {
   accountNumber: string;
   bankName: string;
   instructions: string;
+  cashAccountCode: string;
   isActive: boolean;
   sortOrder: string;
 };
@@ -48,6 +52,7 @@ function emptyDraft(): Draft {
     accountNumber: "",
     bankName: "",
     instructions: "",
+    cashAccountCode: "",
     isActive: true,
     sortOrder: "0",
   };
@@ -61,6 +66,7 @@ function draftFromMethod(m: CmsPaymentMethod): Draft {
     accountNumber: m.accountNumber,
     bankName: m.bankName,
     instructions: m.instructions,
+    cashAccountCode: m.cashAccountCode ?? "",
     isActive: m.isActive,
     sortOrder: String(m.sortOrder),
   };
@@ -70,7 +76,9 @@ const inputClass =
   "w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm text-foreground outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 const labelClass = "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
-export function PaymentMethodsTab({ methods, onRefresh }: PaymentMethodsTabProps) {
+export function PaymentMethodsTab({ methods, ledgerAccounts = [], onRefresh }: PaymentMethodsTabProps) {
+  // Asset-category accounts are the only valid cash/bank targets.
+  const cashCandidates = ledgerAccounts.filter((a) => a.category === "Asset" && a.status === "Active");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingMethod, setEditingMethod] = useState<CmsPaymentMethod | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -102,6 +110,7 @@ export function PaymentMethodsTab({ methods, onRefresh }: PaymentMethodsTabProps
       account_number: draft.accountNumber.trim() || null,
       bank_name: draft.bankName.trim() || null,
       instructions: draft.instructions.trim() || null,
+      cash_account_code: draft.cashAccountCode.trim() || null,
       is_active: draft.isActive,
       sort_order: Number(draft.sortOrder) || 0,
     };
@@ -255,6 +264,16 @@ export function PaymentMethodsTab({ methods, onRefresh }: PaymentMethodsTabProps
         <label className="space-y-1">
           <span className={labelClass}>Custom Instructions</span>
           <textarea value={draft.instructions} onChange={(e) => setDraft((d) => ({ ...d, instructions: e.target.value }))} className={inputClass} rows={3} placeholder="Any special payment instructions for customers." />
+        </label>
+        <label className="space-y-1">
+          <span className={labelClass}>Posts To Ledger Account</span>
+          <select value={draft.cashAccountCode} onChange={(e) => setDraft((d) => ({ ...d, cashAccountCode: e.target.value }))} className={inputClass}>
+            <option value="">Default (1000 — Cash in Hand)</option>
+            {cashCandidates.map((a) => (
+              <option key={a.id} value={a.code}>{a.code} — {a.name}</option>
+            ))}
+          </select>
+          <span className="block text-[11px] text-muted-foreground">Payments on this method will debit the selected cash/bank account. Required for bank reconciliation.</span>
         </label>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex items-center gap-3 rounded-xl border border-border bg-white px-3 py-2.5 text-sm">

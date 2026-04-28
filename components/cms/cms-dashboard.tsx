@@ -175,6 +175,8 @@ export function CmsDashboard() {
         brandFlags={data?.brandFlags ?? []}
         brandTokens={data?.brandTokens ?? []}
         heroSlides={data?.heroSlides ?? []}
+        promiseImages={data?.promiseImages ?? []}
+        storyImages={data?.storyImages ?? []}
         onRefresh={refetch}
       />
     );

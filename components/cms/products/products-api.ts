@@ -290,12 +290,18 @@ export async function deleteProduct(id: string) {
   unwrap(response, "Product was not deleted.");
 }
 
-const MAX_IMAGE_DIMENSION = 1200;
-const IMAGE_QUALITY = 0.82;
+/**
+ * Convert and downscale an image to WebP using a canvas.
+ * Returns the compressed file, or the original if conversion didn't help.
+ */
+async function convertToWebP(
+  file: File,
+  options: { maxDimension: number; quality: number; minSizeBytes?: number; minWebPSizeBytes?: number },
+): Promise<File> {
+  const { maxDimension, quality, minSizeBytes = 100_000, minWebPSizeBytes = 500_000 } = options;
 
-async function compressImage(file: File): Promise<File> {
   // Skip non-image or already-small files
-  if (!file.type.startsWith("image/") || file.size < 100_000) {
+  if (!file.type.startsWith("image/") || file.size < minSizeBytes) {
     return file;
   }
 
@@ -309,16 +315,16 @@ async function compressImage(file: File): Promise<File> {
       let { width, height } = img;
 
       // Only resize if larger than max dimension
-      if (width <= MAX_IMAGE_DIMENSION && height <= MAX_IMAGE_DIMENSION) {
-        // Still re-encode to WebP for smaller size
-        if (file.type === "image/webp" && file.size < 500_000) {
+      if (width <= maxDimension && height <= maxDimension) {
+        // Already small enough — only re-encode if not already WebP
+        if (file.type === "image/webp" && file.size < minWebPSizeBytes) {
           resolve(file);
           return;
         }
       }
 
-      if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
-        const ratio = Math.min(MAX_IMAGE_DIMENSION / width, MAX_IMAGE_DIMENSION / height);
+      if (width > maxDimension || height > maxDimension) {
+        const ratio = Math.min(maxDimension / width, maxDimension / height);
         width = Math.round(width * ratio);
         height = Math.round(height * ratio);
       }
@@ -348,7 +354,7 @@ async function compressImage(file: File): Promise<File> {
           resolve(new File([blob], name, { type: `image/${ext}` }));
         },
         "image/webp",
-        IMAGE_QUALITY,
+        quality,
       );
     };
 
@@ -361,8 +367,55 @@ async function compressImage(file: File): Promise<File> {
   });
 }
 
+// Product images: compact, 1200px max @ 82% quality (existing behavior)
+async function compressImage(file: File): Promise<File> {
+  return convertToWebP(file, { maxDimension: 1200, quality: 0.82 });
+}
+
+// Brand/marketing images: high quality, 2000px max @ 92% quality (preserves detail)
+async function compressBrandImage(file: File): Promise<File> {
+  return convertToWebP(file, {
+    maxDimension: 2000,
+    quality: 0.92,
+    minWebPSizeBytes: 1_500_000, // skip re-encode if WebP is already <1.5MB
+  });
+}
+
 export async function uploadProductImage(file: File) {
   const compressed = await compressImage(file);
+  const accessToken = await getAccessToken();
+
+  const formData = new FormData();
+  formData.append("file", compressed);
+
+  const response = await fetch("/api/upload-image", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: formData,
+  });
+
+  const body = await response.json();
+
+  if (!response.ok) {
+    throw new Error(body.error || "Image upload failed.");
+  }
+
+  return {
+    fileId: body.fileId as string,
+    url: body.url as string,
+  };
+}
+
+/**
+ * Upload a brand/marketing image (hero, promise collage, story page).
+ * Uses higher quality (92%) and larger max dimension (2000px) than product
+ * images so detail is preserved on large hero displays. Still converts to
+ * WebP for bandwidth savings.
+ */
+export async function uploadBrandImage(file: File) {
+  const compressed = await compressBrandImage(file);
   const accessToken = await getAccessToken();
 
   const formData = new FormData();

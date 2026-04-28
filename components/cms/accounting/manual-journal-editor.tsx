@@ -111,11 +111,13 @@ export function ManualJournalEditor({ open, accounts, invoices, onClose, onRefre
   const [saving, setSaving] = useState(false);
   const [lastOpenState, setLastOpenState] = useState(false);
 
-  // Reset and auto-link invoice when modal opens
+  // Reset and optionally preselect invoice when modal opens.
+  // Invoice linking is OPTIONAL — templates like "Owner Investment" or "Tax Payment"
+  // are not tied to any invoice and must post without one.
   if (open && !lastOpenState) {
     setLastOpenState(true);
     const fresh = emptyDraft();
-    // Auto-select if only one invoice
+    // Preselect only when called with exactly one invoice (i.e. opened from an invoice row).
     if (invoices.length === 1) {
       fresh.invoiceId = invoices[0].id;
       const ts = Date.now().toString(36).toUpperCase().slice(-4);
@@ -150,15 +152,20 @@ export function ManualJournalEditor({ open, accounts, invoices, onClose, onRefre
   const save = async () => {
     if (!draft.journalNo.trim()) { setError("Journal number is required."); return; }
     if (!draft.entryDate) { setError("Entry date is required."); return; }
-    if (!draft.invoiceId) { setError("Select an invoice to link this entry to."); return; }
     if (!isBalanced) { setError("Debits must equal credits."); return; }
 
     const validLines = draft.lines.filter((l) => l.accountId && l.amount > 0);
     if (validLines.length < 2) { setError("At least 2 lines with accounts are required."); return; }
 
+    // reference_type reflects what this entry is actually for.
+    // Manual expense/tax payments should NOT be stamped "invoice" — that pollutes the reference graph.
+    const referenceType = draft.invoiceId ? "invoice_manual" : "manual";
+
     setSaving(true);
     setError(null);
     try {
+      // Insert as draft, add lines, then transition to the desired status.
+      // This works around the DB immutability trigger (can't insert lines into a posted entry).
       const journalRes = await requestAdminGraphql<{ insert_journal_entries_one: { id: string } | null }>(
         `mutation CreateManualJournal($object: journal_entries_insert_input!) {
           insert_journal_entries_one(object: $object) { id }
@@ -167,10 +174,10 @@ export function ManualJournalEditor({ open, accounts, invoices, onClose, onRefre
           object: {
             journal_no: draft.journalNo.trim(),
             entry_date: draft.entryDate,
-            reference_type: "invoice",
-            reference_id: draft.invoiceId,
+            reference_type: referenceType,
+            reference_id: draft.invoiceId || null,
             memo: draft.memo.trim() || null,
-            status: draft.status,
+            status: "draft",
           },
         },
       );
@@ -178,7 +185,7 @@ export function ManualJournalEditor({ open, accounts, invoices, onClose, onRefre
       const journalId = journalRes.body.data?.insert_journal_entries_one?.id;
       if (!journalId) throw new Error("Failed to create journal entry.");
 
-      await requestAdminGraphql(
+      const linesRes = await requestAdminGraphql(
         `mutation InsertManualJournalLines($objects: [journal_lines_insert_input!]!) {
           insert_journal_lines(objects: $objects) { affected_rows }
         }`,
@@ -193,6 +200,17 @@ export function ManualJournalEditor({ open, accounts, invoices, onClose, onRefre
           })),
         },
       );
+      if (linesRes.body.errors?.length) throw new Error(linesRes.body.errors[0].message);
+
+      if (draft.status === "posted") {
+        const postRes = await requestAdminGraphql(
+          `mutation PostManualJournal($id: uuid!) {
+            update_journal_entries_by_pk(pk_columns: { id: $id }, _set: { status: "posted" }) { id }
+          }`,
+          { id: journalId },
+        );
+        if (postRes.body.errors?.length) throw new Error(postRes.body.errors[0].message);
+      }
 
       toast.success("Journal entry posted.");
       setDraft(emptyDraft());
@@ -244,11 +262,11 @@ export function ManualJournalEditor({ open, accounts, invoices, onClose, onRefre
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Select label="Linked Invoice *" value={draft.invoiceId} onChange={(e) => {
+        <Select label="Linked Invoice (optional)" value={draft.invoiceId} onChange={(e) => {
           const inv = invoices.find((i) => i.id === e.target.value);
           setDraft((d) => ({ ...d, invoiceId: e.target.value, journalNo: inv ? `JRN-${inv.invoiceNo}-MAN` : d.journalNo }));
         }}>
-          <option value="">Select invoice...</option>
+          <option value="">No invoice link (standalone entry)</option>
           {invoices.map((inv) => (
             <option key={inv.id} value={inv.id}>
               {inv.invoiceNo} — {inv.customer} ({inv.totalPkr})

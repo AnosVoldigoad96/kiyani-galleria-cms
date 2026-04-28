@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle, Download, Pencil, Plus, Trash2, ReceiptText, Coins, Truck, Receipt } from "lucide-react";
+import { CheckCircle, Download, Pencil, Plus, Trash2, ReceiptText, Coins, Truck, Receipt, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { CmsModal } from "@/components/cms/cms-modal";
@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { ManualJournalEditor } from "./manual-journal-editor";
 import { nhost, nhostConfigError } from "@/lib/nhost";
 import type { CmsInvoice, CmsLedgerAccount } from "@/lib/cms-data";
-import { approveFullPayment, recordPayment } from "./invoice-api";
+import { approveFullPayment, issueRefund, recordPayment } from "./invoice-api";
 
 function statusTone(status: CmsInvoice["status"]) {
   if (status === "Paid") return "success" as const;
@@ -39,6 +39,9 @@ export function InvoicesTab({ invoices, accounts, onEdit, onDelete, onCreate, on
   const [partialAmount, setPartialAmount] = useState("");
   const [journalEditorOpen, setJournalEditorOpen] = useState(false);
   const [journalPreselectedInvoice, setJournalPreselectedInvoice] = useState<CmsInvoice | null>(null);
+  const [refundTarget, setRefundTarget] = useState<CmsInvoice | null>(null);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
 
   const openJournalForInvoice = (invoice: CmsInvoice) => {
     setJournalPreselectedInvoice(invoice);
@@ -54,6 +57,26 @@ export function InvoicesTab({ invoices, accounts, onEdit, onDelete, onCreate, on
       onRefresh?.();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to approve payment.");
+    } finally {
+      setPayingId(null);
+    }
+  };
+
+  const handleRefund = async () => {
+    if (!refundTarget) return;
+    const amount = Number(refundAmount);
+    if (!Number.isFinite(amount) || amount <= 0) { toast.error("Enter a valid refund amount."); return; }
+    if (amount > refundTarget.paidPkrValue) { toast.error("Refund exceeds amount paid."); return; }
+    setPayingId(refundTarget.id);
+    try {
+      await issueRefund(refundTarget.id, amount, { reason: refundReason.trim() || undefined });
+      toast.success(`Refund of PKR ${amount.toLocaleString()} issued on ${refundTarget.invoiceNo}.`);
+      setRefundTarget(null);
+      setRefundAmount("");
+      setRefundReason("");
+      onRefresh?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to issue refund.");
     } finally {
       setPayingId(null);
     }
@@ -138,6 +161,9 @@ export function InvoicesTab({ invoices, accounts, onEdit, onDelete, onCreate, on
               <Button variant="outline" size="icon-xs" onClick={() => handleApproveFullPayment(r)} disabled={payingId === r.id} title="Approve Full Payment" className="text-emerald-600 hover:bg-emerald-50"><CheckCircle className="size-3.5" /></Button>
               <Button variant="outline" size="icon-xs" onClick={() => { setPartialPaymentTarget(r); setPartialAmount(""); }} title="Record Partial Payment" className="hidden sm:inline-flex text-amber-600 hover:bg-amber-50"><Coins className="size-3.5" /></Button>
             </>
+          )}
+          {r.paidPkrValue > 0 && r.statusCode !== "void" && (
+            <Button variant="outline" size="icon-xs" onClick={() => { setRefundTarget(r); setRefundAmount(""); setRefundReason(""); }} title="Issue Refund" className="hidden sm:inline-flex text-rose-600 hover:bg-rose-50"><Undo2 className="size-3.5" /></Button>
           )}
           <Button variant="outline" size="icon-xs" onClick={() => openJournalForInvoice(r)} title="Record Expense (Shipping/Tax)" className="hidden sm:inline-flex text-blue-600 hover:bg-blue-50"><Truck className="size-3.5" /></Button>
           <Button variant="outline" size="icon-xs" onClick={() => downloadPdf(r)} disabled={downloadingId === r.id} title="Download PDF"><Download className="size-3.5" /></Button>
@@ -264,6 +290,50 @@ export function InvoicesTab({ invoices, accounts, onEdit, onDelete, onCreate, on
               placeholder={`Max: ${partialPaymentTarget?.balancePkrValue?.toLocaleString() ?? 0}`}
               className="w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
               autoFocus
+            />
+          </label>
+        </div>
+      </CmsModal>
+
+      {/* Refund Modal */}
+      <CmsModal
+        open={Boolean(refundTarget)}
+        title="Issue Refund"
+        description={refundTarget ? `${refundTarget.invoiceNo} — Paid: ${refundTarget.paidPkr}` : ""}
+        onClose={() => { setRefundTarget(null); setRefundAmount(""); setRefundReason(""); }}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setRefundTarget(null)}>Cancel</Button>
+            <Button onClick={handleRefund} disabled={payingId !== null}>
+              {payingId ? "Refunding..." : "Issue Refund"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            This posts a reversing journal (debit Sales Returns, credit Cash). The original sale journal stays on the books for audit history.
+          </p>
+          <label className="block space-y-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Refund Amount (PKR)</span>
+            <input
+              type="number"
+              min={1}
+              max={refundTarget?.paidPkrValue}
+              value={refundAmount}
+              onChange={(e) => setRefundAmount(e.target.value)}
+              placeholder={`Max: ${refundTarget?.paidPkrValue?.toLocaleString() ?? 0}`}
+              className="w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+              autoFocus
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Reason (optional)</span>
+            <input
+              value={refundReason}
+              onChange={(e) => setRefundReason(e.target.value)}
+              placeholder="Customer returned product, duplicate charge, etc."
+              className="w-full rounded-xl border border-border bg-white px-3 py-2.5 text-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
             />
           </label>
         </div>

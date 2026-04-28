@@ -277,6 +277,52 @@ export async function updateProduct(
 }
 
 export async function deleteProduct(id: string) {
+  // First gather any media owned by this product so we can clean up Nhost
+  // storage. We fetch fresh from the API rather than trusting cached state
+  // so the cleanup also covers fields the UI hasn't loaded.
+  let mediaFileIds: string[] = [];
+  try {
+    const mediaResp = await requestAdminGraphql<{
+      products_by_pk: {
+        image_url: string | null;
+        video_url: string | null;
+        gallery_images: Array<{ url: string | null }> | null;
+      } | null;
+    }>(
+      `
+        query ProductMediaForDelete($id: uuid!) {
+          products_by_pk(id: $id) {
+            image_url
+            video_url
+            gallery_images
+          }
+        }
+      `,
+      { id },
+    );
+
+    const product = mediaResp.body.data?.products_by_pk;
+    if (product) {
+      const urls: string[] = [];
+      if (product.image_url) urls.push(product.image_url);
+      if (product.video_url) urls.push(product.video_url);
+      if (Array.isArray(product.gallery_images)) {
+        for (const item of product.gallery_images) {
+          if (item?.url) urls.push(item.url);
+        }
+      }
+      mediaFileIds = urls
+        .map((u) => extractFileId(u))
+        .filter((v): v is string => Boolean(v));
+    }
+  } catch {
+    // Non-fatal: if the lookup fails we still proceed with the DB delete
+    // so the product row never gets stuck because of a transient media
+    // bookkeeping issue.
+  }
+
+  // Delete the DB row first — that's the user-visible action and must
+  // succeed for the toast to be truthful.
   const response = await requestAdminGraphql<{ delete_products_by_pk: { id: string } | null }>(
     `
       mutation DeleteProduct($id: uuid!) {
@@ -289,6 +335,14 @@ export async function deleteProduct(id: string) {
   );
 
   unwrap(response, "Product was not deleted.");
+
+  // Then clean up the storage objects in parallel. Fire-and-forget: a
+  // missing/already-deleted file shouldn't fail the overall delete.
+  if (mediaFileIds.length > 0) {
+    await Promise.allSettled(
+      mediaFileIds.map((fileId) => deleteProductImage(fileId)),
+    );
+  }
 }
 
 /**

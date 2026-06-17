@@ -1,100 +1,129 @@
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs"; // sharp needs the Node runtime, not edge
+export const maxDuration = 60;
 
+import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 import {
-  requireStaffAccess,
-  resolveGraphqlUrl,
-  resolveStorageUrl,
-} from "@/lib/staff-auth";
+  S3Client,
+  PutObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
+} from "@aws-sdk/client-s3";
+import { requireStaffAccess } from "@/lib/staff-auth";
+
+// Keep in sync with crafts-kiyani-frontend/lib/image-loader.ts and the migration
+// script: images are stored as an AVIF ladder <id>/<w>.avif; the DB holds the
+// 1600 default and the storefront loader swaps the size segment per request.
+const LADDER = [400, 800, 1600];
+const DEFAULT_WIDTH = 1600;
+const AVIF_QUALITY = 72;
+const IMMUTABLE = "public, max-age=31536000, immutable";
+
+function getR2() {
+  const {
+    R2_ACCOUNT_ID,
+    R2_ACCESS_KEY_ID,
+    R2_SECRET_ACCESS_KEY,
+    R2_BUCKET,
+    R2_PUBLIC_BASE,
+  } = process.env;
+  if (
+    !R2_ACCOUNT_ID ||
+    !R2_ACCESS_KEY_ID ||
+    !R2_SECRET_ACCESS_KEY ||
+    !R2_BUCKET ||
+    !R2_PUBLIC_BASE
+  ) {
+    return null;
+  }
+  const client = new S3Client({
+    region: "auto",
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: R2_ACCESS_KEY_ID,
+      secretAccessKey: R2_SECRET_ACCESS_KEY,
+    },
+  });
+  return { client, bucket: R2_BUCKET, base: R2_PUBLIC_BASE.replace(/\/$/, "") };
+}
+
+function extFor(type: string, name: string): string {
+  if (name.includes(".")) {
+    return name.split(".").pop()!.toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+  if (type.includes("/")) {
+    return type.split("/")[1].toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+  return "bin";
+}
 
 export async function POST(request: Request) {
   const adminSecret = process.env.HASURA_ADMIN_SECRET;
   if (!adminSecret) {
     return Response.json({ error: "HASURA_ADMIN_SECRET is not configured." }, { status: 500 });
   }
-
   const authError = await requireStaffAccess(request, adminSecret);
   if (authError) return authError;
 
+  const store = getR2();
+  if (!store) {
+    return Response.json({ error: "R2 storage is not configured." }, { status: 500 });
+  }
+
   const formData = await request.formData();
   const file = formData.get("file");
-
   if (!file || !(file instanceof Blob)) {
     return Response.json({ error: "No file provided." }, { status: 400 });
   }
 
-  const storageUrl = resolveStorageUrl();
+  const buf = Buffer.from(await file.arrayBuffer());
+  const type = file.type || "";
+  const name = file instanceof File ? file.name : "";
+  const id = randomUUID();
 
-  // Upload to the "public" bucket so files are accessible without auth
-  const uploadForm = new FormData();
-  uploadForm.append("file[]", file);
-  uploadForm.append("bucket-id", "public");
-
-  let uploadResponse = await fetch(`${storageUrl}/files`, {
-    method: "POST",
-    headers: {
-      "x-hasura-admin-secret": adminSecret,
-    },
-    body: uploadForm,
-  });
-
-  // If "public" bucket doesn't exist, fall back to default bucket
-  if (!uploadResponse.ok) {
-    const fallbackForm = new FormData();
-    fallbackForm.append("file[]", file);
-
-    uploadResponse = await fetch(`${storageUrl}/files`, {
-      method: "POST",
-      headers: {
-        "x-hasura-admin-secret": adminSecret,
-      },
-      body: fallbackForm,
-    });
-  }
-
-  if (!uploadResponse.ok) {
-    const errorText = await uploadResponse.text();
-    console.error("Storage upload failed:", uploadResponse.status, errorText);
-    return Response.json(
-      { error: "Image upload failed. Please try again." },
-      { status: uploadResponse.status },
-    );
-  }
-
-  const uploadBody = await uploadResponse.json();
-  const fileId = uploadBody.processedFiles?.[0]?.id;
-
-  if (!fileId) {
-    return Response.json({ error: "Upload did not return a file id." }, { status: 502 });
-  }
-
-  // Make file publicly readable via Hasura metadata update
-  const graphqlUrl = resolveGraphqlUrl();
   try {
-    await fetch(graphqlUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-hasura-admin-secret": adminSecret,
-      },
-      body: JSON.stringify({
-        query: `
-          mutation MakeFilePublic($id: uuid!) {
-            updateFile(pk_columns: { id: $id }, _set: { isUploaded: true }) {
-              id
-            }
-          }
-        `,
-        variables: { id: fileId },
-      }),
-    });
-  } catch {
-    // Non-critical
-  }
+    if (type.startsWith("image/")) {
+      // Generate the AVIF ladder and upload each rung.
+      await Promise.all(
+        LADDER.map(async (w) => {
+          const avif = await sharp(buf)
+            .resize({ width: w, withoutEnlargement: true })
+            .avif({ quality: AVIF_QUALITY })
+            .toBuffer();
+          await store.client.send(
+            new PutObjectCommand({
+              Bucket: store.bucket,
+              Key: `${id}/${w}.avif`,
+              Body: avif,
+              ContentType: "image/avif",
+              CacheControl: IMMUTABLE,
+            }),
+          );
+        }),
+      );
+      return Response.json({
+        fileId: id,
+        url: `${store.base}/${id}/${DEFAULT_WIDTH}.avif`,
+      });
+    }
 
-  return Response.json({
-    fileId,
-    url: `${storageUrl}/files/${fileId}`,
-  });
+    // Video / other: store the original as-is (no serverless transcode).
+    const ext = extFor(type, name);
+    await store.client.send(
+      new PutObjectCommand({
+        Bucket: store.bucket,
+        Key: `${id}/original.${ext}`,
+        Body: buf,
+        ContentType: type || "application/octet-stream",
+        CacheControl: IMMUTABLE,
+      }),
+    );
+    return Response.json({ fileId: id, url: `${store.base}/${id}/original.${ext}` });
+  } catch (err) {
+    console.error("R2 upload failed:", err);
+    return Response.json({ error: "Upload failed. Please try again." }, { status: 502 });
+  }
 }
 
 export async function DELETE(request: Request) {
@@ -102,9 +131,13 @@ export async function DELETE(request: Request) {
   if (!adminSecret) {
     return Response.json({ error: "HASURA_ADMIN_SECRET is not configured." }, { status: 500 });
   }
-
   const authError = await requireStaffAccess(request, adminSecret);
   if (authError) return authError;
+
+  const store = getR2();
+  if (!store) {
+    return Response.json({ error: "R2 storage is not configured." }, { status: 500 });
+  }
 
   let body: { fileId?: string };
   try {
@@ -112,42 +145,28 @@ export async function DELETE(request: Request) {
   } catch {
     return Response.json({ error: "Invalid JSON body." }, { status: 400 });
   }
-
   const fileId = body.fileId;
   if (!fileId) {
     return Response.json({ error: "fileId is required." }, { status: 400 });
   }
 
-  const storageUrl = resolveStorageUrl();
-
-  // Try to delete from Nhost Storage — non-critical if it fails
+  // Delete every object under <fileId>/ (the ladder rungs or the original).
   try {
-    await fetch(`${storageUrl}/files/${fileId}`, {
-      method: "DELETE",
-      headers: {
-        "x-hasura-admin-secret": adminSecret,
-      },
-    });
-  } catch {
-    // Storage deletion failed — file may be orphaned but product will be updated
-  }
-
-  // Also try to delete the file record via Hasura GraphQL
-  const graphqlUrl = resolveGraphqlUrl();
-  try {
-    await fetch(graphqlUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-hasura-admin-secret": adminSecret,
-      },
-      body: JSON.stringify({
-        query: `mutation DeleteFile($id: uuid!) { deleteFile(id: $id) { id } }`,
-        variables: { id: fileId },
-      }),
-    });
-  } catch {
-    // Non-critical
+    const listed = await store.client.send(
+      new ListObjectsV2Command({ Bucket: store.bucket, Prefix: `${fileId}/` }),
+    );
+    const objects = (listed.Contents ?? [])
+      .map((o) => o.Key)
+      .filter((k): k is string => Boolean(k))
+      .map((Key) => ({ Key }));
+    if (objects.length) {
+      await store.client.send(
+        new DeleteObjectsCommand({ Bucket: store.bucket, Delete: { Objects: objects } }),
+      );
+    }
+  } catch (err) {
+    // Non-critical: orphaned objects are harmless; the product update proceeds.
+    console.error("R2 delete failed:", err);
   }
 
   return Response.json({ success: true });

@@ -89,6 +89,7 @@ const ONLY = onlyArg ? onlyArg.split("=")[1] : null; // image | video | asset
 const skipColsArg = process.argv.find((a) => a.startsWith("--skip-columns="));
 const SKIP_COLS = skipColsArg ? skipColsArg.split("=")[1].split(",").map((s) => s.trim()) : [];
 const inspectArg = process.argv.find((a) => a.startsWith("--inspect="));
+const rmArg = process.argv.find((a) => a.startsWith("--rm=")); // delete one R2 object
 
 // ───────────────────────────────────────────────────────────── hasura ──
 async function hasura(path, body) {
@@ -421,10 +422,23 @@ async function inspectColumn(tableCol) {
   for (const [field, n] of rows) console.log(`  ${String(field).padEnd(28)} ${n}`);
 }
 
+// ───────────────────────────────────────────────────────── rm one object ──
+async function rmObject(key) {
+  const { S3Client, DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+  const s3 = new S3Client({
+    region: "auto",
+    endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY },
+  });
+  await s3.send(new DeleteObjectCommand({ Bucket: env.R2_BUCKET, Key: key }));
+  console.log(`✓ deleted r2://${env.R2_BUCKET}/${key}`);
+}
+
 // ───────────────────────────────────────────────────────────── main ──
 (async () => {
   try {
-    if (inspectArg) await inspectColumn(inspectArg.split("=")[1]);
+    if (rmArg) await rmObject(rmArg.split("=")[1]);
+    else if (inspectArg) await inspectColumn(inspectArg.split("=")[1]);
     else if (PHASE_COPY) await copy();
     else if (PHASE_REWRITE) await rewriteDb();
     else await discover(); // default = pure dry-run

@@ -547,10 +547,16 @@ export async function uploadProductVideo(file: File) {
   };
 }
 
-/** Extract the Nhost file ID from a storage URL */
+/** Extract the storage file ID from a URL: R2 (<uuid>/...) or legacy Nhost (/files/<id>). */
 export function extractFileId(imageUrl: string): string | null {
-  const match = imageUrl.match(/\/files\/([a-f0-9-]+)/i);
-  return match?.[1] ?? null;
+  // R2 layout: https://<base>/<uuid>/1600.avif  or  /<uuid>/original.mp4
+  const r2 = imageUrl.match(
+    /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\//i,
+  );
+  if (r2) return r2[1];
+  // Legacy Nhost: /files/<id>
+  const nhost = imageUrl.match(/\/files\/([a-f0-9-]+)/i);
+  return nhost?.[1] ?? null;
 }
 
 export type GenerateSeoInput = {

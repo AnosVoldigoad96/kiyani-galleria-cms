@@ -44,3 +44,7 @@ next-env.d.ts
 .cache/
 .codex/
 utputFormat
+
+# image migration tooling artifacts (generated; DB backup kept locally for rollback)
+scripts/migration-manifest.json
+scripts/migration-db-backup-*.json
